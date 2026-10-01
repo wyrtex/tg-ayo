@@ -75,13 +75,24 @@ jobs:
           export BUILD_NUMBER="$((100 + BUILD_NUMBER_OFFSET))"
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          set +e
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="/private/var/tmp/_bazel_containerhost" \
             build \
+            --continueOnError \
             --configurationPath="build-system/ayo-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
-            --buildNumber="$BUILD_NUMBER"
+            --buildNumber="$BUILD_NUMBER" 2>&1 | tee "$RUNNER_TEMP/build.log"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" != "0" ]; then
+            # Surface the real errors as annotations (visible without downloading logs)
+            grep -E "error:|ERROR:" "$RUNNER_TEMP/build.log" | sort -u | head -15 | cut -c1-900 | while IFS= read -r line; do
+              echo "::error title=build error::$line"
+            done
+            exit 1
+          fi
 
           mkdir -p "$GITHUB_WORKSPACE/out"
           for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do

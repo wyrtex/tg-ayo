@@ -126,7 +126,7 @@ index 00000000..8dd640e7
 +}
 diff --git a/submodules/TelegramCore/Sources/AyuSettings.swift b/submodules/TelegramCore/Sources/AyuSettings.swift
 new file mode 100644
-index 00000000..9976be32
+index 00000000..d2de2fed
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuSettings.swift
 @@ -0,0 +1,38 @@
@@ -137,26 +137,26 @@ index 00000000..9976be32
 +public enum AyuSettings {
 +    private static let defaults = UserDefaults.standard
 +
-+    private static func get(_ key: String, _ def: Bool = false) -> Bool {
++    private static func readFlag(_ key: String, _ def: Bool = false) -> Bool {
 +        if defaults.object(forKey: key) == nil { return def }
 +        return defaults.bool(forKey: key)
 +    }
-+    private static func set(_ key: String, _ value: Bool) {
++    private static func writeFlag(_ key: String, _ value: Bool) {
 +        defaults.set(value, forKey: key)
 +    }
 +
 +    // Ghost mode
 +    public static var dontReadMessages: Bool {
-+        get { return get("ayo.dontRead") }
-+        set { set("ayo.dontRead", newValue) }
++        get { return readFlag("ayo.dontRead") }
++        set { writeFlag("ayo.dontRead", newValue) }
 +    }
 +    public static var dontSendTyping: Bool {
-+        get { return get("ayo.dontTyping") }
-+        set { set("ayo.dontTyping", newValue) }
++        get { return readFlag("ayo.dontTyping") }
++        set { writeFlag("ayo.dontTyping", newValue) }
 +    }
 +    public static var dontSendOnline: Bool {
-+        get { return get("ayo.dontOnline") }
-+        set { set("ayo.dontOnline", newValue) }
++        get { return readFlag("ayo.dontOnline") }
++        set { writeFlag("ayo.dontOnline", newValue) }
 +    }
 +    /// Master switch: turns all three on/off at once.
 +    public static var ghostModeEnabled: Bool {

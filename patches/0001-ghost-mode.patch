@@ -1,0 +1,252 @@
+diff --git a/submodules/SettingsUI/Sources/AyoSettingsController.swift b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+new file mode 100644
+index 00000000..8dd640e7
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+@@ -0,0 +1,120 @@
++import Foundation
++import UIKit
++import Display
++import SwiftSignalKit
++import TelegramCore
++import TelegramPresentationData
++import ItemListUI
++import PresentationDataUtils
++import AccountContext
++
++private final class AyoSettingsArguments {
++    let toggle: (String, Bool) -> Void
++    init(toggle: @escaping (String, Bool) -> Void) {
++        self.toggle = toggle
++    }
++}
++
++private enum AyoSettingsEntry: ItemListNodeEntry {
++    case ghostHeader
++    case ghostMaster(Bool)
++    case dontRead(Bool)
++    case dontTyping(Bool)
++    case dontOnline(Bool)
++    case ghostFooter
++
++    var section: ItemListSectionId { return 0 }
++
++    var stableId: Int32 {
++        switch self {
++        case .ghostHeader: return 0
++        case .ghostMaster: return 1
++        case .dontRead: return 2
++        case .dontTyping: return 3
++        case .dontOnline: return 4
++        case .ghostFooter: return 5
++        }
++    }
++
++    static func ==(lhs: AyoSettingsEntry, rhs: AyoSettingsEntry) -> Bool {
++        switch (lhs, rhs) {
++        case (.ghostHeader, .ghostHeader), (.ghostFooter, .ghostFooter):
++            return true
++        case let (.ghostMaster(a), .ghostMaster(b)), let (.dontRead(a), .dontRead(b)), let (.dontTyping(a), .dontTyping(b)), let (.dontOnline(a), .dontOnline(b)):
++            return a == b
++        default:
++            return false
++        }
++    }
++
++    static func <(lhs: AyoSettingsEntry, rhs: AyoSettingsEntry) -> Bool {
++        return lhs.stableId < rhs.stableId
++    }
++
++    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
++        let arguments = arguments as! AyoSettingsArguments
++        switch self {
++        case .ghostHeader:
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: "РЕЖИМ ПРИЗРАКА", sectionId: self.section)
++        case let .ghostMaster(value):
++            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Режим призрака", value: value, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.toggle("master", value)
++            })
++        case let .dontRead(value):
++            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Не отмечать прочитанным", value: value, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.toggle("read", value)
++            })
++        case let .dontTyping(value):
++            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Не показывать «печатает»", value: value, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.toggle("typing", value)
++            })
++        case let .dontOnline(value):
++            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Не показывать «в сети»", value: value, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.toggle("online", value)
++            })
++        case .ghostFooter:
++            return ItemListTextItem(presentationData: presentationData, text: .plain("Собеседники не увидят, что вы прочитали сообщение, печатаете или находитесь в приложении."), sectionId: self.section)
++        }
++    }
++}
++
++public func ayoSettingsController(context: AccountContext) -> ViewController {
++    let refresh = ValuePromise<Int>(0, ignoreRepeated: false)
++    var counter = 0
++
++    let arguments = AyoSettingsArguments(toggle: { key, value in
++        switch key {
++        case "master": AyuSettings.ghostModeEnabled = value
++        case "read": AyuSettings.dontReadMessages = value
++        case "typing": AyuSettings.dontSendTyping = value
++        case "online": AyuSettings.dontSendOnline = value
++        default: break
++        }
++        counter += 1
++        refresh.set(counter)
++    })
++
++    let signal = combineLatest(queue: .mainQueue(),
++        context.sharedContext.presentationData,
++        refresh.get()
++    )
++    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
++        var presentationData = presentationData
++        presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
++
++        let entries: [AyoSettingsEntry] = [
++            .ghostHeader,
++            .ghostMaster(AyuSettings.ghostModeEnabled),
++            .dontRead(AyuSettings.dontReadMessages),
++            .dontTyping(AyuSettings.dontSendTyping),
++            .dontOnline(AyuSettings.dontSendOnline),
++            .ghostFooter
++        ]
++
++        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Ayo настройки"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: false)
++        return (controllerState, (listState, arguments))
++    }
++
++    return ItemListController(context: context, state: signal)
++}
+diff --git a/submodules/TelegramCore/Sources/AyuSettings.swift b/submodules/TelegramCore/Sources/AyuSettings.swift
+new file mode 100644
+index 00000000..9976be32
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/AyuSettings.swift
+@@ -0,0 +1,38 @@
++import Foundation
++
++/// AyuGram-style local settings. Stored in UserDefaults so they can be read
++/// synchronously from any thread (network layer, UI).
++public enum AyuSettings {
++    private static let defaults = UserDefaults.standard
++
++    private static func get(_ key: String, _ def: Bool = false) -> Bool {
++        if defaults.object(forKey: key) == nil { return def }
++        return defaults.bool(forKey: key)
++    }
++    private static func set(_ key: String, _ value: Bool) {
++        defaults.set(value, forKey: key)
++    }
++
++    // Ghost mode
++    public static var dontReadMessages: Bool {
++        get { return get("ayo.dontRead") }
++        set { set("ayo.dontRead", newValue) }
++    }
++    public static var dontSendTyping: Bool {
++        get { return get("ayo.dontTyping") }
++        set { set("ayo.dontTyping", newValue) }
++    }
++    public static var dontSendOnline: Bool {
++        get { return get("ayo.dontOnline") }
++        set { set("ayo.dontOnline", newValue) }
++    }
++    /// Master switch: turns all three on/off at once.
++    public static var ghostModeEnabled: Bool {
++        get { return dontReadMessages && dontSendTyping && dontSendOnline }
++        set {
++            dontReadMessages = newValue
++            dontSendTyping = newValue
++            dontSendOnline = newValue
++        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+index 8c8a4fa3..211f6410 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+@@ -53,7 +53,7 @@ private final class AccountPresenceManagerImpl {
+             }, queue: self.queue)
+             self.onlineTimer = timer
+             timer.start()
+-            request = self.network.request(Api.functions.account.updateStatus(offline: .boolFalse))
++            request = self.network.request(Api.functions.account.updateStatus(offline: AyuSettings.dontSendOnline ? .boolTrue : .boolFalse))
+         } else {
+             self.onlineTimer?.invalidate()
+             self.onlineTimer = nil
+diff --git a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
+index 7acc37a1..bd2bce73 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
+@@ -142,6 +142,9 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
+ }
+ 
+ private func requestActivity(postbox: Postbox, network: Network, accountPeerId: PeerId, peerId: PeerId, threadId: Int64?, activity: PeerInputActivity?) -> Signal<Void, NoError> {
++    if AyuSettings.dontSendTyping {
++        return .complete()
++    }
+     return postbox.transaction { transaction -> Signal<Void, NoError> in
+         if let peer = transaction.getPeer(peerId) {
+             if peerId == accountPeerId {
+diff --git a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
+index 66242579..c06c2b6b 100644
+--- a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
++++ b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
+@@ -227,6 +227,10 @@ private func validatePeerReadState(network: Network, postbox: Postbox, stateMana
+ }
+ 
+ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager: AccountStateManager, peerId: PeerId, readState: PeerReadState) -> Signal<PeerReadState, PeerReadStateValidationError> {
++    if AyuSettings.dontReadMessages {
++        // Ghost mode: keep the read state local, do not tell the server.
++        return .single(readState)
++    }
+     if peerId.namespace == Namespaces.Peer.SecretChat {
+         return inputSecretChat(postbox: postbox, peerId: peerId)
+         |> mapToSignal { inputPeer -> Signal<PeerReadState, PeerReadStateValidationError> in
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+index fd01930f..a363410f 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+@@ -183,6 +183,7 @@ enum PeerInfoSettingsSection {
+     case emojiStatus
+     case profileColor
+     case powerSaving
++    case ayoSettings
+     case businessSetup
+     case profile
+     case premiumManagement
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+index 806e652a..0987b770 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+@@ -271,6 +271,8 @@ extension PeerInfoScreenNode {
+             self.interaction.editingOpenNameColorSetup()
+         case .powerSaving:
+             push(energySavingSettingsScreen(context: self.context))
++        case .ayoSettings:
++            push(ayoSettingsController(context: self.context))
+         case .businessSetup:
+             guard let controller = self.controller, !controller.presentAccountFrozenInfoIfNeeded() else {
+                 return
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+index c5f58f4b..9f2d7f8e 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+@@ -244,6 +244,10 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+         interaction.openSettings(.powerSaving)
+     }))
+     
++    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: "Ayo настройки", icon: PresentationResourcesSettings.powerSaving, action: {
++        interaction.openSettings(.ayoSettings)
++    }))
++    
+     let languageName = presentationData.strings.primaryComponent.localizedName
+     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 4, label: .text(languageName.isEmpty ? presentationData.strings.Localization_LanguageName : languageName), text: presentationData.strings.Settings_AppLanguage, icon: PresentationResourcesSettings.language, action: {
+         interaction.openSettings(.language)

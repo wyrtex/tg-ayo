@@ -1,0 +1,21 @@
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index b1ea96b8..8c6e5c1b 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -529,7 +529,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let appGroupName = "group.\(baseAppBundleId)"
+-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
++        // Ayo: re-signed (sideloaded) builds usually lose the app group entitlement,
++        // so fall back to the app's own Library directory instead of failing to launch.
++        var maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
++        if let url = maybeAppGroupUrl, !FileManager.default.isWritableFile(atPath: url.path) {
++            maybeAppGroupUrl = nil
++        }
++        if maybeAppGroupUrl == nil {
++            maybeAppGroupUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
++        }
+         
+         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
+         self.buildConfig = buildConfig

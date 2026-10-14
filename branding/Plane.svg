@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024px" height="1024px" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+    <title>Ghost</title>
+    <g id="Plane" stroke="none" fill="none">
+        <path fill="#FFFFFF" fill-rule="evenodd" d="M352,712 L352,450 A160,160 0 0 1 672,450 L672,712 Q645.3,672 618.7,712 Q592,752 565.3,712 Q538.7,672 512,712 Q485.3,752 458.7,712 Q432,672 405.3,712 Q378.7,752 352,712 Z M418,470 a34,40 0 1 0 68,0 a34,40 0 1 0 -68,0 Z M538,470 a34,40 0 1 0 68,0 a34,40 0 1 0 -68,0 Z"/>
+    </g>
+</svg>

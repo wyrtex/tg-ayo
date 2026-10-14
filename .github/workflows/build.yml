@@ -6,8 +6,13 @@ on:
     branches: [ main, master ]
     paths:
       - 'patches/**'
+      - 'branding/**'
       - '.github/workflows/build.yml'
       - 'UPSTREAM_COMMIT'
+
+env:
+  APP_NAME: AyoGram
+  APP_BUNDLE_ID: org.ayogram.ios
 
 jobs:
   build:
@@ -38,6 +43,11 @@ jobs:
             echo "Applying $p"
             git apply --whitespace=nowarn "$p"
           done
+
+      - name: Apply branding (name + icon)
+        run: |
+          set -ex
+          python3 "$GITHUB_WORKSPACE/branding/apply_branding.py" /Users/Shared/telegram-ios "$APP_NAME"
 
       - name: Select Xcode
         run: |
@@ -104,7 +114,8 @@ jobs:
             echo "::error title=IPA not found::Telegram.ipa not found in bazel-bin or bazel-out"
             exit 1
           fi
-          cp -L "$IPA" "$GITHUB_WORKSPACE/out/AyoGram.ipa"
+          # Own bundle id so it installs next to the official Telegram
+          python3 "$GITHUB_WORKSPACE/branding/rebundle_ipa.py" "$IPA" "$GITHUB_WORKSPACE/out/AyoGram.ipa" ph.telegra.Telegraph "$APP_BUNDLE_ID"
           ls -la "$GITHUB_WORKSPACE/out"
 
       - name: Upload IPA

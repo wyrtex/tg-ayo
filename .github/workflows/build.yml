@@ -74,6 +74,9 @@ jobs:
           c = json.load(open('build-system/appstore-configuration.json'))
           c['api_id'] = os.environ['TG_API_ID']
           c['api_hash'] = os.environ['TG_API_HASH']
+          # Sideloaded builds have no iCloud/Siri entitlements; CloudKit throws without them
+          c['enable_icloud'] = False
+          c['enable_siri'] = False
           json.dump(c, open('build-system/ayo-configuration.json', 'w'), indent=2)
           PY
 

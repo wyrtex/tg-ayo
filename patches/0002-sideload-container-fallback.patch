@@ -1,8 +1,32 @@
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index b1ea96b8..8c6e5c1b 100644
+index b1ea96b8..d1673f00 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
-@@ -529,7 +529,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -56,6 +56,23 @@ private let handleVoipNotifications = false
+ 
+ private var testIsLaunched = false
+ 
++// Ayo: BGTaskScheduler.register() throws (crashing the app) if the identifier is not
++// listed in Info.plist. Re-signing tools may change the bundle id, so check first.
++func ayoIsBackgroundTaskPermitted(_ identifier: String) -> Bool {
++    guard let permitted = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] else {
++        return false
++    }
++    for item in permitted {
++        if item == identifier {
++            return true
++        }
++        if item.hasSuffix("*") && identifier.hasPrefix(String(item.dropLast())) {
++            return true
++        }
++    }
++    return false
++}
++
+ private func isKeyboardWindow(window: NSObject) -> Bool {
+     let typeName = NSStringFromClass(type(of: window))
+     if #available(iOS 9.0, *) {
+@@ -529,7 +546,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
          
          let baseAppBundleId = Bundle.main.bundleIdentifier!
          let appGroupName = "group.\(baseAppBundleId)"
@@ -19,3 +43,36 @@ index b1ea96b8..8c6e5c1b 100644
          
          let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
          self.buildConfig = buildConfig
+@@ -1548,7 +1573,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         }
+         #endif
+         
+-        if #available(iOS 13.0, *) {
++        if #available(iOS 13.0, *), ayoIsBackgroundTaskPermitted("\(baseAppBundleId).cleanup") {
+             let cleanupTaskId = "\(baseAppBundleId).cleanup"
+             
+             BGTaskScheduler.shared.register(forTaskWithIdentifier: cleanupTaskId, using: DispatchQueue.main) { task in
+diff --git a/submodules/TelegramUI/Sources/SharedWakeupManager.swift b/submodules/TelegramUI/Sources/SharedWakeupManager.swift
+index 97de6187..b23afc2b 100644
+--- a/submodules/TelegramUI/Sources/SharedWakeupManager.swift
++++ b/submodules/TelegramUI/Sources/SharedWakeupManager.swift
+@@ -535,6 +535,9 @@ public final class SharedWakeupManager {
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let uploadTaskId = "\(baseAppBundleId).upload.message\(self.nextBackgroundProcessingTaskId)"
++        guard ayoIsBackgroundTaskPermitted(uploadTaskId) else {
++            return
++        }
+         self.nextBackgroundProcessingTaskId += 1
+         self.backgroundProcessingTaskProgressByKey = [:]
+         self.backgroundProcessingTaskLaunched = false
+@@ -711,6 +714,9 @@ public final class SharedWakeupManager {
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let uploadTaskId = "\(baseAppBundleId).upload.story\(self.nextBackgroundStoryProcessingTaskId)"
++        guard ayoIsBackgroundTaskPermitted(uploadTaskId) else {
++            return
++        }
+         self.nextBackgroundStoryProcessingTaskId += 1
+         self.backgroundStoryProcessingTaskProgressByKey = [:]
+         self.backgroundStoryProcessingTaskLaunched = false

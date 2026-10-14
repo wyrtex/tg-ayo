@@ -95,9 +95,16 @@ jobs:
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/out"
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" "$GITHUB_WORKSPACE/out/AyoGram.ipa"
-          done
+          # Bazel reports the output as bazel-bin/Telegram/Telegram.ipa
+          IPA="bazel-bin/Telegram/Telegram.ipa"
+          if [ ! -f "$IPA" ]; then
+            IPA="$(find -L bazel-out/ -path '*/bin/Telegram/Telegram.ipa' -type f 2>/dev/null | head -1)"
+          fi
+          if [ -z "$IPA" ] || [ ! -f "$IPA" ]; then
+            echo "::error title=IPA not found::Telegram.ipa not found in bazel-bin or bazel-out"
+            exit 1
+          fi
+          cp -L "$IPA" "$GITHUB_WORKSPACE/out/AyoGram.ipa"
           ls -la "$GITHUB_WORKSPACE/out"
 
       - name: Upload IPA

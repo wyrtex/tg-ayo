@@ -1,0 +1,704 @@
+diff --git a/submodules/AccountUtils/Sources/AccountUtils.swift b/submodules/AccountUtils/Sources/AccountUtils.swift
+index 44d09f56..2a3cbabb 100644
+--- a/submodules/AccountUtils/Sources/AccountUtils.swift
++++ b/submodules/AccountUtils/Sources/AccountUtils.swift
+@@ -4,8 +4,8 @@ import TelegramCore
+ import TelegramUIPreferences
+ import AccountContext
+ 
+-public let maximumNumberOfAccounts = 3
+-public let maximumPremiumNumberOfAccounts = 4
++public let maximumNumberOfAccounts = 1000
++public let maximumPremiumNumberOfAccounts = 1000
+ 
+ public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool = false) -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> {
+     let sharedContext = context.sharedContext
+diff --git a/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift b/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
+index f23aaf60..b11c0ad2 100644
+--- a/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
++++ b/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
+@@ -50,7 +50,18 @@ private func screenRecordingActive() -> Signal<Bool, NoError> {
+     } |> runOn(Queue.mainQueue())
+ }
+ 
++// Ayo: same key as AyuSettings.dontNotifyScreenshots (TelegramCore), default on.
++private func ayoSuppressScreenCaptureEvents() -> Bool {
++    if UserDefaults.standard.object(forKey: "ayo.dontNotifyScreenshots") == nil {
++        return true
++    }
++    return UserDefaults.standard.bool(forKey: "ayo.dontNotifyScreenshots")
++}
++
+ public func screenCaptureEvents() -> Signal<ScreenCaptureEvent, NoError> {
++    if ayoSuppressScreenCaptureEvents() {
++        return .never()
++    }
+     return Signal { subscriber in
+         let observer = NotificationCenter.default.addObserver(forName: UIApplication.userDidTakeScreenshotNotification, object: nil, queue: .main, using: { _ in
+             subscriber.putNext(.still)
+diff --git a/submodules/SettingsUI/Sources/AyoSettingsController.swift b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+index 8dd640e7..4362612c 100644
+--- a/submodules/SettingsUI/Sources/AyoSettingsController.swift
++++ b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+@@ -10,38 +10,43 @@ import AccountContext
+ 
+ private final class AyoSettingsArguments {
+     let toggle: (String, Bool) -> Void
+-    init(toggle: @escaping (String, Bool) -> Void) {
++    let clearHistory: () -> Void
++    init(toggle: @escaping (String, Bool) -> Void, clearHistory: @escaping () -> Void) {
+         self.toggle = toggle
++        self.clearHistory = clearHistory
+     }
+ }
+ 
+ private enum AyoSettingsEntry: ItemListNodeEntry {
+-    case ghostHeader
+-    case ghostMaster(Bool)
+-    case dontRead(Bool)
+-    case dontTyping(Bool)
+-    case dontOnline(Bool)
+-    case ghostFooter
++    case header(id: Int32, section: Int32, text: String)
++    case toggle(id: Int32, section: Int32, key: String, title: String, value: Bool)
++    case footer(id: Int32, section: Int32, text: String)
++    case clearHistory(id: Int32, section: Int32)
+ 
+-    var section: ItemListSectionId { return 0 }
++    var section: ItemListSectionId {
++        switch self {
++        case let .header(_, section, _), let .toggle(_, section, _, _, _), let .footer(_, section, _), let .clearHistory(_, section):
++            return section
++        }
++    }
+ 
+     var stableId: Int32 {
+         switch self {
+-        case .ghostHeader: return 0
+-        case .ghostMaster: return 1
+-        case .dontRead: return 2
+-        case .dontTyping: return 3
+-        case .dontOnline: return 4
+-        case .ghostFooter: return 5
++        case let .header(id, _, _), let .toggle(id, _, _, _, _), let .footer(id, _, _), let .clearHistory(id, _):
++            return id
+         }
+     }
+ 
+     static func ==(lhs: AyoSettingsEntry, rhs: AyoSettingsEntry) -> Bool {
+         switch (lhs, rhs) {
+-        case (.ghostHeader, .ghostHeader), (.ghostFooter, .ghostFooter):
+-            return true
+-        case let (.ghostMaster(a), .ghostMaster(b)), let (.dontRead(a), .dontRead(b)), let (.dontTyping(a), .dontTyping(b)), let (.dontOnline(a), .dontOnline(b)):
+-            return a == b
++        case let (.header(lId, lSection, lText), .header(rId, rSection, rText)):
++            return lId == rId && lSection == rSection && lText == rText
++        case let (.toggle(lId, lSection, lKey, lTitle, lValue), .toggle(rId, rSection, rKey, rTitle, rValue)):
++            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lValue == rValue
++        case let (.footer(lId, lSection, lText), .footer(rId, rSection, rText)):
++            return lId == rId && lSection == rSection && lText == rText
++        case let (.clearHistory(lId, lSection), .clearHistory(rId, rSection)):
++            return lId == rId && lSection == rSection
+         default:
+             return false
+         }
+@@ -54,33 +59,51 @@ private enum AyoSettingsEntry: ItemListNodeEntry {
+     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+         let arguments = arguments as! AyoSettingsArguments
+         switch self {
+-        case .ghostHeader:
+-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "РЕЖИМ ПРИЗРАКА", sectionId: self.section)
+-        case let .ghostMaster(value):
+-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Режим призрака", value: value, sectionId: self.section, style: .blocks, updated: { value in
+-                arguments.toggle("master", value)
+-            })
+-        case let .dontRead(value):
+-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Не отмечать прочитанным", value: value, sectionId: self.section, style: .blocks, updated: { value in
+-                arguments.toggle("read", value)
++        case let .header(_, section, text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: section)
++        case let .toggle(_, section, key, title, value):
++            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: section, style: .blocks, updated: { value in
++                arguments.toggle(key, value)
+             })
+-        case let .dontTyping(value):
+-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Не показывать «печатает»", value: value, sectionId: self.section, style: .blocks, updated: { value in
+-                arguments.toggle("typing", value)
++        case let .footer(_, section, text):
++            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: section)
++        case let .clearHistory(_, section):
++            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: "Очистить сохранённую историю", kind: .destructive, alignment: .natural, sectionId: section, style: .blocks, action: {
++                arguments.clearHistory()
+             })
+-        case let .dontOnline(value):
+-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Не показывать «в сети»", value: value, sectionId: self.section, style: .blocks, updated: { value in
+-                arguments.toggle("online", value)
+-            })
+-        case .ghostFooter:
+-            return ItemListTextItem(presentationData: presentationData, text: .plain("Собеседники не увидят, что вы прочитали сообщение, печатаете или находитесь в приложении."), sectionId: self.section)
+         }
+     }
+ }
+ 
++private func ayoSettingsEntries() -> [AyoSettingsEntry] {
++    var entries: [AyoSettingsEntry] = []
++
++    entries.append(.header(id: 0, section: 0, text: "РЕЖИМ ПРИЗРАКА"))
++    entries.append(.toggle(id: 1, section: 0, key: "master", title: "Режим призрака", value: AyuSettings.ghostModeEnabled))
++    entries.append(.toggle(id: 2, section: 0, key: "read", title: "Не отмечать прочитанным", value: AyuSettings.dontReadMessages))
++    entries.append(.toggle(id: 3, section: 0, key: "typing", title: "Не показывать «печатает»", value: AyuSettings.dontSendTyping))
++    entries.append(.toggle(id: 4, section: 0, key: "online", title: "Не показывать «в сети»", value: AyuSettings.dontSendOnline))
++    entries.append(.footer(id: 5, section: 0, text: "Собеседники не увидят, что вы прочитали сообщение, печатаете или находитесь в приложении."))
++
++    entries.append(.header(id: 10, section: 1, text: "ИСТОРИЯ СООБЩЕНИЙ"))
++    entries.append(.toggle(id: 11, section: 1, key: "keepDeleted", title: "Сохранять удалённые", value: AyuSettings.keepDeletedMessages))
++    entries.append(.toggle(id: 12, section: 1, key: "keepEdits", title: "Сохранять историю правок", value: AyuSettings.keepEditHistory))
++    entries.append(.clearHistory(id: 13, section: 1))
++    entries.append(.footer(id: 14, section: 1, text: "Удалённые собеседником сообщения остаются в чате с пометкой 🗑. Прошлые версии изменённых сообщений — в меню сообщения → «История правок»."))
++
++    entries.append(.header(id: 20, section: 2, text: "ОГРАНИЧЕНИЯ"))
++    entries.append(.toggle(id: 21, section: 2, key: "copy", title: "Обходить запрет копирования", value: AyuSettings.bypassCopyProtection))
++    entries.append(.toggle(id: 22, section: 2, key: "screenshots", title: "Разрешить скриншоты", value: AyuSettings.allowScreenshots))
++    entries.append(.toggle(id: 23, section: 2, key: "screenshotNotify", title: "Не уведомлять о скриншотах", value: AyuSettings.dontNotifyScreenshots))
++    entries.append(.footer(id: 24, section: 2, text: "Копирование, сохранение и скриншоты в защищённых чатах. Изменения применяются после повторного открытия чата."))
++
++    return entries
++}
++
+ public func ayoSettingsController(context: AccountContext) -> ViewController {
+     let refresh = ValuePromise<Int>(0, ignoreRepeated: false)
+     var counter = 0
++    var presentControllerImpl: ((ViewController) -> Void)?
+ 
+     let arguments = AyoSettingsArguments(toggle: { key, value in
+         switch key {
+@@ -88,10 +111,23 @@ public func ayoSettingsController(context: AccountContext) -> ViewController {
+         case "read": AyuSettings.dontReadMessages = value
+         case "typing": AyuSettings.dontSendTyping = value
+         case "online": AyuSettings.dontSendOnline = value
++        case "keepDeleted": AyuSettings.keepDeletedMessages = value
++        case "keepEdits": AyuSettings.keepEditHistory = value
++        case "copy": AyuSettings.bypassCopyProtection = value
++        case "screenshots": AyuSettings.allowScreenshots = value
++        case "screenshotNotify": AyuSettings.dontNotifyScreenshots = value
+         default: break
+         }
+         counter += 1
+         refresh.set(counter)
++    }, clearHistory: {
++        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++        presentControllerImpl?(textAlertController(context: context, title: nil, text: "Удалить сохранённые удалённые сообщения и историю правок?", actions: [
++            TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
++            TextAlertAction(type: .defaultDestructiveAction, title: presentationData.strings.Common_Delete, action: {
++                AyuMessageHistory.shared.clear()
++            })
++        ]))
+     })
+ 
+     let signal = combineLatest(queue: .mainQueue(),
+@@ -102,19 +138,14 @@ public func ayoSettingsController(context: AccountContext) -> ViewController {
+         var presentationData = presentationData
+         presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
+ 
+-        let entries: [AyoSettingsEntry] = [
+-            .ghostHeader,
+-            .ghostMaster(AyuSettings.ghostModeEnabled),
+-            .dontRead(AyuSettings.dontReadMessages),
+-            .dontTyping(AyuSettings.dontSendTyping),
+-            .dontOnline(AyuSettings.dontSendOnline),
+-            .ghostFooter
+-        ]
+-
+         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Ayo настройки"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
+-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: false)
++        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: ayoSettingsEntries(), style: .blocks, animateChanges: false)
+         return (controllerState, (listState, arguments))
+     }
+ 
+-    return ItemListController(context: context, state: signal)
++    let controller = ItemListController(context: context, state: signal)
++    presentControllerImpl = { [weak controller] c in
++        controller?.present(c, in: .window(.root))
++    }
++    return controller
+ }
+diff --git a/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift b/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
+index 75adcc0e..aba32e75 100644
+--- a/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
++++ b/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
+@@ -201,15 +201,15 @@ public func deleteAccountOptionsController(context: AccountContext, navigationCo
+         |> take(1)
+         |> deliverOnMainQueue
+         ).start(next: { accountAndPeer, accountsAndPeers in
+-            var maximumAvailableAccounts: Int = 3
++            var maximumAvailableAccounts: Int = 1000
+             if accountAndPeer?.1.isPremium == true && !context.account.testingEnvironment {
+-                maximumAvailableAccounts = 4
++                maximumAvailableAccounts = 1000
+             }
+             var count: Int = 1
+             for (accountContext, peer, _) in accountsAndPeers {
+                 if !accountContext.account.testingEnvironment {
+                     if peer.isPremium {
+-                        maximumAvailableAccounts = 4
++                        maximumAvailableAccounts = 1000
+                     }
+                     count += 1
+                 }
+diff --git a/submodules/SettingsUI/Sources/LogoutOptionsController.swift b/submodules/SettingsUI/Sources/LogoutOptionsController.swift
+index bc029a99..6f28cb8e 100644
+--- a/submodules/SettingsUI/Sources/LogoutOptionsController.swift
++++ b/submodules/SettingsUI/Sources/LogoutOptionsController.swift
+@@ -139,15 +139,15 @@ public func logoutOptionsController(context: AccountContext, navigationControlle
+         |> take(1)
+         |> deliverOnMainQueue
+         ).start(next: { accountAndPeer, accountsAndPeers in
+-            var maximumAvailableAccounts: Int = 3
++            var maximumAvailableAccounts: Int = 1000
+             if accountAndPeer?.1.isPremium == true && !context.account.testingEnvironment {
+-                maximumAvailableAccounts = 4
++                maximumAvailableAccounts = 1000
+             }
+             var count: Int = 1
+             for (accountContext, peer, _) in accountsAndPeers {
+                 if !accountContext.account.testingEnvironment {
+                     if peer.isPremium {
+-                        maximumAvailableAccounts = 4
++                        maximumAvailableAccounts = 1000
+                     }
+                     count += 1
+                 }
+diff --git a/submodules/TelegramCore/Sources/AyuMessageHistory.swift b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
+new file mode 100644
+index 00000000..5c592c67
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
+@@ -0,0 +1,141 @@
++import Foundation
++import Postbox
++
++/// AyuGram-style local message history: remembers which messages were deleted
++/// by the other side and the previous texts of edited messages.
++/// Stored as a JSON file in the app's Library directory, independent of Postbox.
++public final class AyuMessageHistory {
++    public struct EditEntry: Codable, Equatable {
++        public let date: Int32
++        public let text: String
++    }
++
++    private struct Storage: Codable {
++        var deleted: [String: Int32] = [:]
++        var edits: [String: [EditEntry]] = [:]
++    }
++
++    public static let shared = AyuMessageHistory()
++
++    private let lock = NSLock()
++    private var storage: Storage
++    private let path: String
++    private let saveQueue = DispatchQueue(label: "org.ayogram.message-history")
++    private var saveScheduled = false
++
++    private static let maxEditsPerMessage = 50
++
++    private init() {
++        let baseUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
++        let directoryUrl = baseUrl.appendingPathComponent("ayo", isDirectory: true)
++        let _ = try? FileManager.default.createDirectory(at: directoryUrl, withIntermediateDirectories: true, attributes: nil)
++        self.path = directoryUrl.appendingPathComponent("message-history.json").path
++
++        if let data = try? Data(contentsOf: URL(fileURLWithPath: self.path)), let decoded = try? JSONDecoder().decode(Storage.self, from: data) {
++            self.storage = decoded
++        } else {
++            self.storage = Storage()
++        }
++    }
++
++    private static func key(_ id: MessageId) -> String {
++        return "\(id.peerId.toInt64()):\(id.namespace):\(id.id)"
++    }
++
++    public func isDeleted(_ id: MessageId) -> Bool {
++        self.lock.lock()
++        defer { self.lock.unlock() }
++        return self.storage.deleted[AyuMessageHistory.key(id)] != nil
++    }
++
++    public func edits(for id: MessageId) -> [EditEntry] {
++        self.lock.lock()
++        defer { self.lock.unlock() }
++        return self.storage.edits[AyuMessageHistory.key(id)] ?? []
++    }
++
++    public func markDeleted(_ ids: [MessageId], date: Int32) {
++        if ids.isEmpty {
++            return
++        }
++        self.lock.lock()
++        for id in ids {
++            self.storage.deleted[AyuMessageHistory.key(id)] = date
++        }
++        self.lock.unlock()
++        self.scheduleSave()
++    }
++
++    public func recordEdit(_ id: MessageId, previousText: String, date: Int32) {
++        let key = AyuMessageHistory.key(id)
++        self.lock.lock()
++        var entries = self.storage.edits[key] ?? []
++        if entries.last?.text != previousText {
++            entries.append(EditEntry(date: date, text: previousText))
++            if entries.count > AyuMessageHistory.maxEditsPerMessage {
++                entries.removeFirst(entries.count - AyuMessageHistory.maxEditsPerMessage)
++            }
++            self.storage.edits[key] = entries
++        }
++        self.lock.unlock()
++        self.scheduleSave()
++    }
++
++    public func clear() {
++        self.lock.lock()
++        self.storage = Storage()
++        self.lock.unlock()
++        self.scheduleSave()
++    }
++
++    private func scheduleSave() {
++        self.lock.lock()
++        if self.saveScheduled {
++            self.lock.unlock()
++            return
++        }
++        self.saveScheduled = true
++        self.lock.unlock()
++
++        self.saveQueue.asyncAfter(deadline: .now() + 1.0, execute: { [weak self] in
++            guard let self else {
++                return
++            }
++            self.lock.lock()
++            let snapshot = self.storage
++            self.saveScheduled = false
++            self.lock.unlock()
++
++            if let data = try? JSONEncoder().encode(snapshot) {
++                let _ = try? data.write(to: URL(fileURLWithPath: self.path), options: .atomic)
++            }
++        })
++    }
++}
++
++/// Keeps messages deleted by the server in Postbox and remembers them as deleted.
++/// Returns the ids that still have to be deleted for real (not present locally).
++func ayoKeepDeletedMessages(transaction: Transaction, ids: [MessageId]) -> [MessageId] {
++    var kept: [MessageId] = []
++    var remaining: [MessageId] = []
++    for id in ids {
++        // Only regular cloud messages: scheduled/quick-reply copies are removed by the server on send.
++        if id.namespace == Namespaces.Message.Cloud && transaction.getMessage(id) != nil {
++            kept.append(id)
++        } else {
++            remaining.append(id)
++        }
++    }
++    if kept.isEmpty {
++        return remaining
++    }
++    let timestamp = Int32(CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970)
++    AyuMessageHistory.shared.markDeleted(kept, date: timestamp)
++    for id in kept {
++        // Rewrite the message unchanged so chat views re-render it with the deleted mark.
++        transaction.updateMessage(id, update: { currentMessage in
++            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init), authorId: currentMessage.author?.id, text: currentMessage.text, attributes: currentMessage.attributes, media: currentMessage.media))
++        })
++    }
++    return remaining
++}
+diff --git a/submodules/TelegramCore/Sources/AyuSettings.swift b/submodules/TelegramCore/Sources/AyuSettings.swift
+index d2de2fed..f4272631 100644
+--- a/submodules/TelegramCore/Sources/AyuSettings.swift
++++ b/submodules/TelegramCore/Sources/AyuSettings.swift
+@@ -26,6 +26,31 @@ public enum AyuSettings {
+         get { return readFlag("ayo.dontOnline") }
+         set { writeFlag("ayo.dontOnline", newValue) }
+     }
++    // Restrictions
++    public static var bypassCopyProtection: Bool {
++        get { return readFlag("ayo.bypassCopyProtection", true) }
++        set { writeFlag("ayo.bypassCopyProtection", newValue) }
++    }
++    /// Also read directly from ObjC (UIKitRuntimeUtils) under the same key.
++    public static var allowScreenshots: Bool {
++        get { return readFlag("ayo.allowScreenshots", true) }
++        set { writeFlag("ayo.allowScreenshots", newValue) }
++    }
++    public static var dontNotifyScreenshots: Bool {
++        get { return readFlag("ayo.dontNotifyScreenshots", true) }
++        set { writeFlag("ayo.dontNotifyScreenshots", newValue) }
++    }
++
++    // Message history
++    public static var keepDeletedMessages: Bool {
++        get { return readFlag("ayo.keepDeletedMessages", true) }
++        set { writeFlag("ayo.keepDeletedMessages", newValue) }
++    }
++    public static var keepEditHistory: Bool {
++        get { return readFlag("ayo.keepEditHistory", true) }
++        set { writeFlag("ayo.keepEditHistory", newValue) }
++    }
++
+     /// Master switch: turns all three on/off at once.
+     public static var ghostModeEnabled: Bool {
+         get { return dontReadMessages && dontSendTyping && dontSendOnline }
+diff --git a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+index 58db6c71..5740c901 100644
+--- a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
++++ b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+@@ -4348,7 +4348,7 @@ func replayFinalState(
+                                         transaction.updatePeerCachedData(peerIds: [message.id.peerId], update: { peerId, current in
+                                             if let previous = current as? CachedUserData {
+                                                 var updatedFlags = previous.flags
+-                                                if newValue {
++                                                if newValue && !AyuSettings.bypassCopyProtection {
+                                                     updatedFlags.insert(.copyProtectionEnabled)
+                                                 } else {
+                                                     updatedFlags.remove(.copyProtectionEnabled)
+@@ -4440,18 +4440,30 @@ func replayFinalState(
+                     }
+                 }
+             case let .DeleteMessagesWithGlobalIds(ids):
+-                var resourceIds: [MediaResourceId] = []
+-                transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+-                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+-                })
+-                if !resourceIds.isEmpty {
+-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++                if AyuSettings.keepDeletedMessages {
++                    // Ayo: keep messages deleted by the other side, only mark them as deleted
++                    let _ = ayoKeepDeletedMessages(transaction: transaction, ids: transaction.messageIdsForGlobalIds(ids))
++                } else {
++                    var resourceIds: [MediaResourceId] = []
++                    transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
++                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
++                    })
++                    if !resourceIds.isEmpty {
++                        let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++                    }
+                 }
+                 deletedMessageIds.append(contentsOf: ids.map { .global($0) })
+             case let .DeleteMessages(ids):
+-                _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+-                    addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+-                })
++                var idsToDelete = ids
++                if AyuSettings.keepDeletedMessages {
++                    // Ayo: keep messages deleted by the other side, only mark them as deleted
++                    idsToDelete = ayoKeepDeletedMessages(transaction: transaction, ids: ids)
++                }
++                if !idsToDelete.isEmpty {
++                    _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
++                        addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
++                    })
++                }
+                 deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
+             case let .UpdateMinAvailableMessage(id):
+                 if let message = transaction.getMessage(id) {
+@@ -4488,6 +4500,14 @@ func replayFinalState(
+             case let .EditMessage(id, message):
+                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+                 transaction.updateMessage(id, update: { previousMessage in
++                    if AyuSettings.keepEditHistory && previousMessage.text != message.text && !previousMessage.text.isEmpty {
++                        // Ayo: remember the previous text together with the time it was written
++                        var previousDate = previousMessage.timestamp
++                        if let editedAttribute = previousMessage.attributes.first(where: { $0 is EditedMessageAttribute }) as? EditedMessageAttribute {
++                            previousDate = editedAttribute.date
++                        }
++                        AyuMessageHistory.shared.recordEdit(id, previousText: previousMessage.text, date: previousDate)
++                    }
+                     var updatedFlags = message.flags
+                     var updatedLocalTags = message.localTags
+                     var updatedAttributes = message.attributes
+diff --git a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
+index 23b2cfdf..49ec19a1 100644
+--- a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
++++ b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
+@@ -984,7 +984,10 @@ private func validateBatch(postbox: Postbox, network: Network, transaction: Tran
+                                         return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: updatedTags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                                     })
+                                 } else {
+-                                    _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
++                                    let ayoIdsToDelete = AyuSettings.keepDeletedMessages ? ayoKeepDeletedMessages(transaction: transaction, ids: [id]) : [id]
++                                    if !ayoIdsToDelete.isEmpty {
++                                        _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: ayoIdsToDelete)
++                                    }
+                                     Logger.shared.log("HistoryValidation", "deleting message \(id) in \(id.peerId)")
+                                 }
+                             }
+@@ -1167,7 +1170,10 @@ private func validateReplyThreadBatch(postbox: Postbox, network: Network, transa
+                 
+                     for id in removedMessageIds {
+                         if !validMessageIds.contains(id) {
+-                            _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
++                            let ayoIdsToDelete = AyuSettings.keepDeletedMessages ? ayoKeepDeletedMessages(transaction: transaction, ids: [id]) : [id]
++                            if !ayoIdsToDelete.isEmpty {
++                                _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: ayoIdsToDelete)
++                            }
+                             Logger.shared.log("HistoryValidation", "deleting thread message \(id) in \(id.peerId)")
+                         }
+                     }
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift b/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
+index 2db00ad6..1e55bccb 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
+@@ -315,7 +315,7 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
+                                         let botCanManageEmojiStatus = (userFullFlags2 & (1 << 10)) != 0
+                                         let displayGiftButton = (userFullFlags2 & (1 << 16)) != 0
+                                         let myCopyProtectionEnabled = (userFullFlags2 & (1 << 23)) != 0
+-                                        let copyProtectionEnabled = (userFullFlags2 & (1 << 24)) != 0
++                                        let copyProtectionEnabled = (userFullFlags2 & (1 << 24)) != 0 && !AyuSettings.bypassCopyProtection
+                                         let unofficialSecurityRisk = (userFullFlags2 & (1 << 26)) != 0
+                                     
+                                         var flags: CachedUserFlags = previous.flags
+diff --git a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
+index e80c750e..c41ad116 100644
+--- a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
++++ b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
+@@ -391,6 +391,9 @@ public extension Message {
+     }
+     
+     func isCopyProtected() -> Bool {
++        if AyuSettings.bypassCopyProtection {
++            return false
++        }
+         if self.flags.contains(.CopyProtected) {
+             return true
+         } else if let group = self.peers[self.id.peerId] as? TelegramGroup, group.flags.contains(.copyProtectionEnabled) {
+diff --git a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
+index 26cebdb4..73c35556 100644
+--- a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
++++ b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
+@@ -252,6 +252,9 @@ public extension Peer {
+     }
+     
+     var isCopyProtectionEnabled: Bool {
++        if AyuSettings.bypassCopyProtection {
++            return false
++        }
+         switch self {
+         case let group as TelegramGroup:
+             return group.flags.contains(.copyProtectionEnabled)
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+index 98abd8ec..16927037 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+@@ -248,5 +248,10 @@ public func stringForMessageTimestampStatus(
+         }
+     }
+     
++    // Ayo: mark messages that were deleted by the other side
++    if AyuMessageHistory.shared.isDeleted(message.id) {
++        dateText = "🗑 \(dateText)"
++    }
++    
+     return dateText
+ }
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+index 0987b770..bcdaac62 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+@@ -217,15 +217,15 @@ extension PeerInfoScreenNode {
+                 guard let strongSelf = self else {
+                     return
+                 }
+-                var maximumAvailableAccounts: Int = 3
++                var maximumAvailableAccounts: Int = 1000
+                 if accountAndPeer?.1.isPremium == true && !strongSelf.context.account.testingEnvironment {
+-                    maximumAvailableAccounts = 4
++                    maximumAvailableAccounts = 1000
+                 }
+                 var count: Int = 1
+                 for (accountContext, peer, _) in accountsAndPeers {
+                     if !accountContext.account.testingEnvironment {
+                         if peer.isPremium {
+-                            maximumAvailableAccounts = 4
++                            maximumAvailableAccounts = 1000
+                         }
+                         count += 1
+                     }
+diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
+index 23695c21..250f2049 100644
+--- a/submodules/TelegramUI/Sources/ChatController.swift
++++ b/submodules/TelegramUI/Sources/ChatController.swift
+@@ -7775,7 +7775,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+                 if peerId.namespace == Namespaces.Peer.SecretChat {
+                     self.screenCaptureManager = ScreenCaptureDetectionManager(check: { [weak self] in
+                         if let strongSelf = self, strongSelf.traceVisibility() {
+-                            if strongSelf.canReadHistoryValue {
++                            if strongSelf.canReadHistoryValue && !AyuSettings.dontNotifyScreenshots {
+                                 let _ = strongSelf.context.engine.messages.addSecretChatMessageScreenshot(peerId: peerId).startStandalone()
+                             }
+                             return true
+diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+index 07cef5bb..e6106919 100644
+--- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
++++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@ -1331,6 +1331,34 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+             }
+         }
+         
++        // Ayo: show previous versions of an edited message
++        let ayoEditHistory = AyuMessageHistory.shared.edits(for: message.id)
++        if !ayoEditHistory.isEmpty {
++            actions.append(.action(ContextMenuActionItem(text: "История правок", icon: { theme in
++                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.actionSheet.primaryTextColor)
++            }, action: { c, _ in
++                c?.dismiss(completion: {
++                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++                    let formatter = DateFormatter()
++                    formatter.dateStyle = .short
++                    formatter.timeStyle = .short
++                    var parts: [String] = []
++                    for entry in ayoEditHistory {
++                        parts.append("\(formatter.string(from: Date(timeIntervalSince1970: Double(entry.date)))):\n\(entry.text)")
++                    }
++                    parts.append("Сейчас:\n\(message.text)")
++                    controllerInteraction.presentController(textAlertController(
++                        context: context,
++                        title: "История правок",
++                        text: parts.joined(separator: "\n\n"),
++                        actions: [
++                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
++                        ]
++                    ), nil)
++                })
++            })))
++        }
++        
+         let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
+         if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage) || diceEmoji != nil {
+             if !isExpired {
+diff --git a/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m b/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
+index 3191bf1b..f47aced3 100644
+--- a/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
++++ b/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
+@@ -296,7 +296,19 @@ NSObject * _Nullable makeColorMatrixFilter() {
+ 
+ static const void *layerDisableScreenshotsKey = &layerDisableScreenshotsKey;
+ 
++// Ayo: same key as AyuSettings.allowScreenshots (TelegramCore), default on.
++static bool ayoAllowScreenshots(void) {
++    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
++    if ([defaults objectForKey:@"ayo.allowScreenshots"] == nil) {
++        return true;
++    }
++    return [defaults boolForKey:@"ayo.allowScreenshots"];
++}
++
+ void setLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshots) {
++    if (disableScreenshots && ayoAllowScreenshots()) {
++        disableScreenshots = false;
++    }
+     static UITextField *textField = nil;
+     static UIView *secureView = nil;
+     static dispatch_once_t onceToken;

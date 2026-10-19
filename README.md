@@ -14,8 +14,13 @@ its data in its own container instead of hanging on a black screen.
 Secrets required: `TG_API_ID`, `TG_API_HASH`.
 
 ## Features
-- [x] Ghost mode (no read receipts, no typing, no online) — Settings → Ayo настройки
-- [ ] Keep deleted messages
+All toggles: Settings → Ayo настройки.
+- [x] Ghost mode (no read receipts, no typing, no online)
+- [x] Keep deleted messages (marked 🗑 in the time label)
+- [x] Edit history (message context menu → «История правок»)
+- [x] Bypass copy protection (copy / save in protected chats)
+- [x] Allow screenshots, no screenshot notifications
+- [x] Unlimited accounts
+- [ ] Forward from protected chats (server rejects plain forwards; needs re-upload)
 - [ ] Save self-destructing media
-- [ ] Bypass forward/save restrictions
 - [ ] UI customization

@@ -2,7 +2,7 @@
 
 Telegram-iOS fork-by-patches with AyuGram-style features.
 
-The repo stores only patches (`patches/*.patch`) and a pinned upstream commit
+The repo stores only patches (`patches/*.patch`) and a pinned upstream commit (v13.2)
 (`UPSTREAM_COMMIT`). GitHub Actions fetches upstream, applies the patches and
 builds an unsigned IPA (Actions → Build IPA → Artifacts). Sign it with ESign.
 

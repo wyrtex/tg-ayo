@@ -1,0 +1,2649 @@
+diff --git a/Telegram/BUILD b/Telegram/BUILD
+index 1ac8279b..f1d3f079 100644
+--- a/Telegram/BUILD
++++ b/Telegram/BUILD
+@@ -1292,6 +1292,7 @@ swift_library(
+         "//submodules/BuildConfig:BuildConfig",
+         "//submodules/WidgetItems:WidgetItems_iOS14",
+         "//submodules/WidgetItemsUtils:WidgetItemsUtils",
++        "//submodules/AyoCallActivity:AyoCallActivity",
+         "//submodules/AppLockState:AppLockState",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+         "//submodules/TelegramCore:TelegramCore",
+@@ -1350,6 +1351,9 @@ ios_extension(
+     deps = [
+         ":WidgetExtensionLib",
+     ],
++    app_intents = [
++        "//submodules/AyoCallActivity:AyoCallActivity",
++    ],
+     frameworks = [
+         ":SwiftSignalKitFramework",
+         ":PostboxFramework",
+@@ -1691,6 +1695,8 @@ plist_fragment(
+         <string>{telegram_bundle_id}.cleanup</string>
+         <string>{telegram_bundle_id}.upload.*</string>
+     </array>
++    <key>NSSupportsLiveActivities</key>
++    <true/>
+     <key>CFBundleAllowMixedLocalizations</key>
+     <true/>
+     <key>CFBundleDevelopmentRegion</key>
+@@ -1915,6 +1921,9 @@ ios_application(
+         "//conditions:default": ":Telegram_xcode_profile" if telegram_use_xcode_managed_codesigning else "@build_configuration//provisioning:Telegram.mobileprovision",
+     }),
+     entitlements = ":TelegramEntitlements.entitlements",
++    app_intents = [
++        "//submodules/AyoCallActivity:AyoCallActivity",
++    ],
+     infoplists = [
+         ":TelegramInfoPlist",
+         ":BuildNumberInfoPlist",
+diff --git a/Telegram/WidgetKitWidget/AyoCallLiveActivity.swift b/Telegram/WidgetKitWidget/AyoCallLiveActivity.swift
+new file mode 100644
+index 00000000..e7cfc5a1
+--- /dev/null
++++ b/Telegram/WidgetKitWidget/AyoCallLiveActivity.swift
+@@ -0,0 +1,152 @@
++#if arch(arm64) || arch(x86_64)
++#if canImport(ActivityKit)
++
++import SwiftUI
++import WidgetKit
++import ActivityKit
++#if canImport(AppIntents)
++import AppIntents
++#endif
++import AyoCallActivity
++
++private let ayoAccent = Color(red: 0.62, green: 0.42, blue: 1.0)
++
++@available(iOS 16.1, *)
++private struct AyoCallTimerText: View {
++    let state: AyoCallAttributes.ContentState
++
++    var body: some View {
++        if let connectedSince = state.connectedSince {
++            Text(timerInterval: connectedSince ... Date.distantFuture, countsDown: false)
++                .monospacedDigit()
++        } else {
++            Text(state.statusText)
++        }
++    }
++}
++
++@available(iOS 16.1, *)
++private struct AyoCallAvatar: View {
++    let initials: String
++    let size: CGFloat
++
++    var body: some View {
++        ZStack {
++            Circle().fill(ayoAccent)
++            Text(initials)
++                .font(.system(size: size * 0.4, weight: .semibold))
++                .foregroundColor(.white)
++        }
++        .frame(width: size, height: size)
++    }
++}
++
++@available(iOS 16.1, *)
++private struct AyoCallButtons: View {
++    let state: AyoCallAttributes.ContentState
++
++    var body: some View {
++        if #available(iOS 17.0, *) {
++            HStack(spacing: 14) {
++                Button(intent: AyoCallToggleMuteIntent()) {
++                    AyoCallButtonLabel(systemName: state.isMuted ? "mic.slash.fill" : "mic.fill", isActive: state.isMuted, isDestructive: false)
++                }
++                .buttonStyle(.plain)
++                Button(intent: AyoCallToggleSpeakerIntent()) {
++                    AyoCallButtonLabel(systemName: state.isSpeaker ? "speaker.wave.3.fill" : "speaker.fill", isActive: state.isSpeaker, isDestructive: false)
++                }
++                .buttonStyle(.plain)
++                Button(intent: AyoCallToggleVideoIntent()) {
++                    AyoCallButtonLabel(systemName: state.isVideo ? "video.fill" : "video.slash.fill", isActive: state.isVideo, isDestructive: false)
++                }
++                .buttonStyle(.plain)
++                Button(intent: AyoCallHangUpIntent()) {
++                    AyoCallButtonLabel(systemName: "phone.down.fill", isActive: false, isDestructive: true)
++                }
++                .buttonStyle(.plain)
++            }
++        } else {
++            Text("Нажмите, чтобы открыть звонок")
++                .font(.footnote)
++                .foregroundColor(.secondary)
++        }
++    }
++}
++
++@available(iOS 16.1, *)
++private struct AyoCallButtonLabel: View {
++    let systemName: String
++    let isActive: Bool
++    let isDestructive: Bool
++
++    var body: some View {
++        ZStack {
++            Circle().fill(isDestructive ? Color.red : (isActive ? Color.white : Color.white.opacity(0.18)))
++            Image(systemName: systemName)
++                .font(.system(size: 18, weight: .semibold))
++                .foregroundColor(isActive && !isDestructive ? .black : .white)
++        }
++        .frame(width: 48, height: 48)
++    }
++}
++
++@available(iOS 16.1, *)
++struct AyoCallLiveActivityWidget: Widget {
++    var body: some WidgetConfiguration {
++        ActivityConfiguration(for: AyoCallAttributes.self) { context in
++            VStack(spacing: 12) {
++                HStack(spacing: 12) {
++                    AyoCallAvatar(initials: context.attributes.initials, size: 44)
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text(context.attributes.peerName)
++                            .font(.headline)
++                            .lineLimit(1)
++                        AyoCallTimerText(state: context.state)
++                            .font(.subheadline)
++                            .foregroundColor(.secondary)
++                    }
++                    Spacer()
++                }
++                AyoCallButtons(state: context.state)
++            }
++            .padding(16)
++            .activityBackgroundTint(Color.black.opacity(0.8))
++            .activitySystemActionForegroundColor(.white)
++        } dynamicIsland: { context in
++            DynamicIsland {
++                DynamicIslandExpandedRegion(.leading) {
++                    AyoCallAvatar(initials: context.attributes.initials, size: 40)
++                }
++                DynamicIslandExpandedRegion(.trailing) {
++                    AyoCallTimerText(state: context.state)
++                        .font(.headline)
++                        .foregroundColor(.green)
++                        .frame(maxWidth: 80)
++                }
++                DynamicIslandExpandedRegion(.center) {
++                    Text(context.attributes.peerName)
++                        .font(.headline)
++                        .lineLimit(1)
++                }
++                DynamicIslandExpandedRegion(.bottom) {
++                    AyoCallButtons(state: context.state)
++                        .padding(.top, 4)
++                }
++            } compactLeading: {
++                Image(systemName: context.state.isMuted ? "mic.slash.fill" : "phone.fill")
++                    .foregroundColor(.green)
++            } compactTrailing: {
++                AyoCallTimerText(state: context.state)
++                    .font(.caption)
++                    .foregroundColor(.green)
++                    .frame(maxWidth: 48)
++            } minimal: {
++                Image(systemName: "phone.fill")
++                    .foregroundColor(.green)
++            }
++        }
++    }
++}
++
++#endif
++#endif
+diff --git a/Telegram/WidgetKitWidget/TodayViewController.swift b/Telegram/WidgetKitWidget/TodayViewController.swift
+index 4e3c8389..f0c77e38 100644
+--- a/Telegram/WidgetKitWidget/TodayViewController.swift
++++ b/Telegram/WidgetKitWidget/TodayViewController.swift
+@@ -928,7 +928,9 @@ struct Static_AvatarsWidget: Widget {
+ @main
+ struct AllWidgetsEntryPoint {
+     static func main() {
+-        if #available(iOS 14.0, *) {
++        if #available(iOS 16.1, *) {
++            AllWidgetsWithCallActivity.main()
++        } else if #available(iOS 14.0, *) {
+             AllWidgets.main()
+         } else {
+             preconditionFailure()
+@@ -944,6 +946,16 @@ struct AllWidgets: WidgetBundle {
+    }
+ }
+ 
++// Ayo: adds the call Live Activity (Dynamic Island) on iOS 16.1+
++@available(iOSApplicationExtension 16.1, iOS 16.1, *)
++struct AllWidgetsWithCallActivity: WidgetBundle {
++   var body: some Widget {
++        Static_Widget()
++        Static_AvatarsWidget()
++        AyoCallLiveActivityWidget()
++   }
++}
++
+ #else
+ 
+ @main
+diff --git a/submodules/AccountContext/Sources/AyoHooks.swift b/submodules/AccountContext/Sources/AyoHooks.swift
+new file mode 100644
+index 00000000..b63a7510
+--- /dev/null
++++ b/submodules/AccountContext/Sources/AyoHooks.swift
+@@ -0,0 +1,8 @@
++import Foundation
++import Display
++
++/// Ayo: lets low-level modules (e.g. ChatListUI) open screens that live in
++/// modules they cannot depend on directly. Filled in by TelegramUI at startup.
++public enum AyoHooks {
++    public static var makeSettingsController: ((AccountContext) -> ViewController)?
++}
+diff --git a/submodules/AccountUtils/Sources/AccountUtils.swift b/submodules/AccountUtils/Sources/AccountUtils.swift
+index 44d09f56..2a3cbabb 100644
+--- a/submodules/AccountUtils/Sources/AccountUtils.swift
++++ b/submodules/AccountUtils/Sources/AccountUtils.swift
+@@ -4,8 +4,8 @@ import TelegramCore
+ import TelegramUIPreferences
+ import AccountContext
+ 
+-public let maximumNumberOfAccounts = 3
+-public let maximumPremiumNumberOfAccounts = 4
++public let maximumNumberOfAccounts = 1000
++public let maximumPremiumNumberOfAccounts = 1000
+ 
+ public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool = false) -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> {
+     let sharedContext = context.sharedContext
+diff --git a/submodules/AyoCallActivity/BUILD b/submodules/AyoCallActivity/BUILD
+new file mode 100644
+index 00000000..c31dac08
+--- /dev/null
++++ b/submodules/AyoCallActivity/BUILD
+@@ -0,0 +1,32 @@
++load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
++
++objc_library(
++    name = "AyoAppIntentsShim",
++    module_name = "AyoAppIntentsShim",
++    srcs = [
++        "Shim/AyoAppIntentsShim.m",
++    ],
++    weak_sdk_frameworks = [
++        "AppIntents",
++    ],
++    visibility = [
++        "//visibility:public",
++    ],
++)
++
++swift_library(
++    name = "AyoCallActivity",
++    module_name = "AyoCallActivity",
++    srcs = glob([
++        "Sources/**/*.swift",
++    ]),
++    copts = [
++        "-warnings-as-errors",
++    ],
++    deps = [
++        ":AyoAppIntentsShim",
++    ],
++    visibility = [
++        "//visibility:public",
++    ],
++)
+diff --git a/submodules/AyoCallActivity/Shim/AyoAppIntentsShim.m b/submodules/AyoCallActivity/Shim/AyoAppIntentsShim.m
+new file mode 100644
+index 00000000..977391bb
+--- /dev/null
++++ b/submodules/AyoCallActivity/Shim/AyoAppIntentsShim.m
+@@ -0,0 +1,11 @@
++#import <Foundation/Foundation.h>
++
++// Ayo: empty objc_library so the AppIntents SDK framework can be declared as a
++// (weak) dependency. rules_apple's app_intents_aspect requires the swift_library
++// passed as `app_intents` to depend on the AppIntents SDK framework; swift_library
++// has no sdk_frameworks attribute, so this shim carries it.
++@interface AyoAppIntentsShim : NSObject
++@end
++
++@implementation AyoAppIntentsShim
++@end
+diff --git a/submodules/AyoCallActivity/Sources/AyoCallActivity.swift b/submodules/AyoCallActivity/Sources/AyoCallActivity.swift
+new file mode 100644
+index 00000000..588e3389
+--- /dev/null
++++ b/submodules/AyoCallActivity/Sources/AyoCallActivity.swift
+@@ -0,0 +1,115 @@
++import Foundation
++#if canImport(ActivityKit)
++import ActivityKit
++#endif
++#if canImport(AppIntents)
++import AppIntents
++#endif
++
++/// Ayo: Live Activity (Dynamic Island / lock screen) for 1-on-1 calls.
++/// Shared between the main app (starts/updates the activity, performs actions)
++/// and the widget extension (renders it).
++
++public enum AyoCallAction: String {
++    case toggleMute
++    case toggleSpeaker
++    case toggleVideo
++    case hangUp
++}
++
++/// Set by the main app; intents call it when a button in the Dynamic Island is pressed.
++public enum AyoCallActionHandler {
++    public static var handler: ((AyoCallAction) -> Void)?
++}
++
++#if canImport(ActivityKit)
++@available(iOS 16.1, *)
++public struct AyoCallAttributes: ActivityAttributes {
++    public struct ContentState: Codable, Hashable, Sendable {
++        /// nil while the call is not connected yet
++        public var connectedSince: Date?
++        public var statusText: String
++        public var isMuted: Bool
++        public var isSpeaker: Bool
++        public var isVideo: Bool
++
++        public init(connectedSince: Date?, statusText: String, isMuted: Bool, isSpeaker: Bool, isVideo: Bool) {
++            self.connectedSince = connectedSince
++            self.statusText = statusText
++            self.isMuted = isMuted
++            self.isSpeaker = isSpeaker
++            self.isVideo = isVideo
++        }
++    }
++
++    public var peerName: String
++    public var initials: String
++
++    public init(peerName: String, initials: String) {
++        self.peerName = peerName
++        self.initials = initials
++    }
++}
++#endif
++
++#if canImport(AppIntents)
++@available(iOS 17.0, *)
++public struct AyoCallToggleMuteIntent: LiveActivityIntent {
++    public static var title: LocalizedStringResource = "Микрофон"
++
++    public init() {
++    }
++
++    public func perform() async throws -> some IntentResult {
++        await MainActor.run {
++            AyoCallActionHandler.handler?(.toggleMute)
++        }
++        return .result()
++    }
++}
++
++@available(iOS 17.0, *)
++public struct AyoCallToggleSpeakerIntent: LiveActivityIntent {
++    public static var title: LocalizedStringResource = "Динамик"
++
++    public init() {
++    }
++
++    public func perform() async throws -> some IntentResult {
++        await MainActor.run {
++            AyoCallActionHandler.handler?(.toggleSpeaker)
++        }
++        return .result()
++    }
++}
++
++@available(iOS 17.0, *)
++public struct AyoCallToggleVideoIntent: LiveActivityIntent {
++    public static var title: LocalizedStringResource = "Камера"
++
++    public init() {
++    }
++
++    public func perform() async throws -> some IntentResult {
++        await MainActor.run {
++            AyoCallActionHandler.handler?(.toggleVideo)
++        }
++        return .result()
++    }
++}
++
++@available(iOS 17.0, *)
++public struct AyoCallHangUpIntent: LiveActivityIntent {
++    public static var title: LocalizedStringResource = "Завершить"
++
++    public init() {
++    }
++
++    public func perform() async throws -> some IntentResult {
++        await MainActor.run {
++            AyoCallActionHandler.handler?(.hangUp)
++        }
++        return .result()
++    }
++}
++#endif
+diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
+index 1ef2cfaf..3f9ec5b6 100644
+--- a/submodules/ChatListUI/Sources/ChatListController.swift
++++ b/submodules/ChatListUI/Sources/ChatListController.swift
+@@ -6871,6 +6871,20 @@ private final class ChatListLocationContext {
+     var proxyButton: NavigationBarComponent.Button?
+     var storyButton: NavigationBarComponent.Button?
+     
++    // Ayo: quick access to Ayo settings from the main chat list
++    private lazy var ayoSettingsButton: NavigationBarComponent.Button = NavigationBarComponent.Button(id: "ayoSettings",
++        content: .icon(imageName: "Chat List/AyoSettingsIcon"),
++        tint: .accent,
++        action: { [weak self] _ in
++            guard let self, let parentController = self.parentController else {
++                return
++            }
++            if let controller = AyoHooks.makeSettingsController?(self.context) {
++                parentController.push(controller)
++            }
++        }
++    )
++    
+     var rightButtons: [NavigationBarComponent.Button] {
+         var result: [NavigationBarComponent.Button] = []
+         if let rightButton = self.rightButton {
+@@ -6879,6 +6893,9 @@ private final class ChatListLocationContext {
+         if let storyButton = self.storyButton {
+             result.append(storyButton)
+         }
++        if let rightButton = self.rightButton, rightButton.id == AnyHashable("compose"), AyuSettings.showChatListSettingsButton {
++            result.append(self.ayoSettingsButton)
++        }
+         if let proxyButton = self.proxyButton {
+             result.append(proxyButton)
+         }
+diff --git a/submodules/Display/Source/Font.swift b/submodules/Display/Source/Font.swift
+index e53d8ae6..3ca99153 100644
+--- a/submodules/Display/Source/Font.swift
++++ b/submodules/Display/Source/Font.swift
+@@ -1,6 +1,54 @@
+ import Foundation
+ import UIKit
+ 
++
++// Ayo: user-selected app font (Ayo settings → Оформление). Read once; changes apply after restart.
++private var ayoAppFontName: String { return UserDefaults.standard.string(forKey: "ayo.appFont") ?? "" }
++
++func ayoCustomFont(size: CGFloat, weight: UIFont.Weight, italic: Bool = false, monospacedNumbers: Bool = false) -> UIFont? {
++    if ayoAppFontName.isEmpty {
++        return nil
++    }
++    var descriptor: UIFontDescriptor
++    switch ayoAppFontName {
++    case "rounded", "serif", "mono":
++        let base = UIFont.systemFont(ofSize: size, weight: weight).fontDescriptor
++        let design: UIFontDescriptor.SystemDesign
++        if ayoAppFontName == "rounded" {
++            design = .rounded
++        } else if ayoAppFontName == "serif" {
++            design = .serif
++        } else {
++            design = .monospaced
++        }
++        guard let designed = base.withDesign(design) else {
++            return nil
++        }
++        descriptor = designed
++    default:
++        descriptor = UIFontDescriptor(fontAttributes: [
++            .family: ayoAppFontName,
++            .traits: [UIFontDescriptor.TraitKey.weight: weight]
++        ])
++    }
++    if italic, let italicDescriptor = descriptor.withSymbolicTraits(descriptor.symbolicTraits.union(.traitItalic)) {
++        descriptor = italicDescriptor
++    }
++    if monospacedNumbers {
++        descriptor = descriptor.addingAttributes([
++            UIFontDescriptor.AttributeName.featureSettings: [
++                [UIFontDescriptor.FeatureKey.featureIdentifier: kNumberSpacingType,
++                 UIFontDescriptor.FeatureKey.typeIdentifier: kMonospacedNumbersSelector]
++            ]
++        ])
++    }
++    let font = UIFont(descriptor: descriptor, size: size)
++    if font.familyName.isEmpty {
++        return nil
++    }
++    return font
++}
++
+ public struct Font {
+     public enum Design {
+         case regular
+@@ -165,6 +213,10 @@ public struct Font {
+         if let cachedFont = self.cache.get(key) {
+             return cachedFont
+         }
++        if design == .regular, let customFont = ayoCustomFont(size: size, weight: weight.weight, italic: traits.contains(.italic), monospacedNumbers: traits.contains(.monospacedNumbers)) {
++            self.cache.set(customFont, key: key)
++            return customFont
++        }
+         if #available(iOS 13.0, *), design != .camera {
+             let descriptor: UIFontDescriptor
+             if #available(iOS 14.0, *) {
+@@ -289,18 +341,30 @@ public struct Font {
+     }
+     
+     public static func regular(_ size: CGFloat) -> UIFont {
++        if let customFont = ayoCustomFont(size: size, weight: .regular) {
++            return customFont
++        }
+         return UIFont.systemFont(ofSize: size)
+     }
+     
+     public static func medium(_ size: CGFloat) -> UIFont {
++        if let customFont = ayoCustomFont(size: size, weight: .medium) {
++            return customFont
++        }
+         return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.medium)
+     }
+     
+     public static func semibold(_ size: CGFloat) -> UIFont {
++        if let customFont = ayoCustomFont(size: size, weight: .semibold) {
++            return customFont
++        }
+         return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.semibold)
+     }
+     
+     public static func bold(_ size: CGFloat) -> UIFont {
++        if let customFont = ayoCustomFont(size: size, weight: .bold) {
++            return customFont
++        }
+         if #available(iOS 8.2, *) {
+             return UIFont.boldSystemFont(ofSize: size)
+         } else {
+@@ -313,6 +377,9 @@ public struct Font {
+     }
+     
+     public static func light(_ size: CGFloat) -> UIFont {
++        if let customFont = ayoCustomFont(size: size, weight: .light) {
++            return customFont
++        }
+         return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.light)
+     }
+     
+diff --git a/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift b/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
+index 914fb6d8..eef4b415 100644
+--- a/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
++++ b/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
+@@ -87,7 +87,18 @@ private final class ScreenshotNotificationObserver {
+     }
+ }
+ 
++// Ayo: same key as AyuSettings.dontNotifyScreenshots (TelegramCore), default on.
++private func ayoSuppressScreenCaptureEvents() -> Bool {
++    if UserDefaults.standard.object(forKey: "ayo.dontNotifyScreenshots") == nil {
++        return true
++    }
++    return UserDefaults.standard.bool(forKey: "ayo.dontNotifyScreenshots")
++}
++
+ public func screenCaptureEvents() -> Signal<ScreenCaptureEvent, NoError> {
++    if ayoSuppressScreenCaptureEvents() {
++        return .never()
++    }
+     return Signal { subscriber in
+         let observer = ScreenshotNotificationObserver({
+             subscriber.putNext(.still)
+diff --git a/submodules/SettingsUI/Sources/AyoAppearanceController.swift b/submodules/SettingsUI/Sources/AyoAppearanceController.swift
+new file mode 100644
+index 00000000..9a6c940a
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/AyoAppearanceController.swift
+@@ -0,0 +1,316 @@
++import Foundation
++import UIKit
++import Display
++import SwiftSignalKit
++import TelegramCore
++import TelegramPresentationData
++import ItemListUI
++import PresentationDataUtils
++import AccountContext
++
++private final class AyoAppearanceArguments {
++    let select: (String) -> Void
++    init(select: @escaping (String) -> Void) {
++        self.select = select
++    }
++}
++
++private enum AyoAppearanceEntry: ItemListNodeEntry {
++    case header(id: Int32, section: Int32, text: String)
++    case option(id: Int32, section: Int32, key: String, title: String, checked: Bool)
++    case color(id: Int32, section: Int32, key: String, title: String, color: UInt32?)
++    case action(id: Int32, section: Int32, key: String, title: String, destructive: Bool)
++    case footer(id: Int32, section: Int32, text: String)
++
++    var section: ItemListSectionId {
++        switch self {
++        case let .header(_, section, _), let .option(_, section, _, _, _), let .color(_, section, _, _, _), let .action(_, section, _, _, _), let .footer(_, section, _):
++            return section
++        }
++    }
++
++    var stableId: Int32 {
++        switch self {
++        case let .header(id, _, _), let .option(id, _, _, _, _), let .color(id, _, _, _, _), let .action(id, _, _, _, _), let .footer(id, _, _):
++            return id
++        }
++    }
++
++    static func ==(lhs: AyoAppearanceEntry, rhs: AyoAppearanceEntry) -> Bool {
++        switch (lhs, rhs) {
++        case let (.header(lId, lSection, lText), .header(rId, rSection, rText)):
++            return lId == rId && lSection == rSection && lText == rText
++        case let (.option(lId, lSection, lKey, lTitle, lChecked), .option(rId, rSection, rKey, rTitle, rChecked)):
++            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lChecked == rChecked
++        case let (.color(lId, lSection, lKey, lTitle, lColor), .color(rId, rSection, rKey, rTitle, rColor)):
++            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lColor == rColor
++        case let (.action(lId, lSection, lKey, lTitle, lDestructive), .action(rId, rSection, rKey, rTitle, rDestructive)):
++            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lDestructive == rDestructive
++        case let (.footer(lId, lSection, lText), .footer(rId, rSection, rText)):
++            return lId == rId && lSection == rSection && lText == rText
++        default:
++            return false
++        }
++    }
++
++    static func <(lhs: AyoAppearanceEntry, rhs: AyoAppearanceEntry) -> Bool {
++        return lhs.stableId < rhs.stableId
++    }
++
++    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
++        let arguments = arguments as! AyoAppearanceArguments
++        switch self {
++        case let .header(_, section, text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: section)
++        case let .option(_, section, key, title, checked):
++            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: title, style: .left, checked: checked, zeroSeparatorInsets: false, sectionId: section, action: {
++                arguments.select(key)
++            })
++        case let .color(_, section, key, title, color):
++            let icon = generateFilledCircleImage(diameter: 22.0, color: color.flatMap { UIColor(rgb: $0) } ?? UIColor.clear, strokeColor: UIColor(white: 0.5, alpha: 0.5), strokeWidth: 1.0)
++            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: icon, title: title, label: color.flatMap { ayoHexString($0) } ?? "Авто", labelStyle: .text, sectionId: section, style: .blocks, disclosureStyle: .arrow, action: {
++                arguments.select(key)
++            })
++        case let .action(_, section, key, title, destructive):
++            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: destructive ? .destructive : .generic, alignment: .natural, sectionId: section, style: .blocks, action: {
++                arguments.select(key)
++            })
++        case let .footer(_, section, text):
++            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: section)
++        }
++    }
++}
++
++private func ayoHexString(_ color: UInt32) -> String {
++    return String(format: "#%06X", color & 0xffffff)
++}
++
++private let ayoFontOptions: [(String, String)] = [
++    ("", "Системный"),
++    ("rounded", "Скруглённый (SF Rounded)"),
++    ("serif", "С засечками (New York)"),
++    ("mono", "Моноширинный (SF Mono)"),
++    ("Avenir Next", "Avenir Next"),
++    ("Helvetica Neue", "Helvetica Neue"),
++    ("Futura", "Futura"),
++    ("Gill Sans", "Gill Sans"),
++    ("Georgia", "Georgia"),
++    ("Baskerville", "Baskerville"),
++    ("Didot", "Didot"),
++    ("Courier New", "Courier New"),
++    ("Noteworthy", "Noteworthy"),
++    ("Chalkboard SE", "Chalkboard SE"),
++    ("Marker Felt", "Marker Felt"),
++]
++
++private let ayoShapeOptions: [(Int, String)] = [
++    (0, "Обычная, с хвостиком"),
++    (1, "Без хвостика"),
++    (2, "Одинаковые углы"),
++    (3, "Прямоугольная"),
++]
++
++private let ayoColorCountTitles: [String] = [
++    "Как в теме",
++    "1 цвет",
++    "2 цвета (градиент)",
++    "3 цвета (градиент)",
++    "4 цвета (градиент)",
++]
++
++private func ayoAppearanceEntries() -> [AyoAppearanceEntry] {
++    var entries: [AyoAppearanceEntry] = []
++
++    entries.append(.header(id: 0, section: 0, text: "ШРИФТ ПРИЛОЖЕНИЯ"))
++    let currentFont = AyuSettings.appFont
++    for (index, option) in ayoFontOptions.enumerated() {
++        entries.append(.option(id: Int32(1 + index), section: 0, key: "font:\(option.0)", title: option.1, checked: currentFont == option.0))
++    }
++
++    entries.append(.header(id: 100, section: 1, text: "ФОРМА СООБЩЕНИЙ"))
++    let currentShape = AyuSettings.bubbleShape
++    for (index, option) in ayoShapeOptions.enumerated() {
++        entries.append(.option(id: Int32(101 + index), section: 1, key: "shape:\(option.0)", title: option.1, checked: currentShape == option.0))
++    }
++    entries.append(.footer(id: 120, section: 1, text: "Радиус углов настраивается в «Оформление» → «Углы блоков с сообщениями»."))
++
++    func appendBubbleSection(baseId: Int32, section: Int32, title: String, prefix: String, colors: [UInt32], textColor: UInt32) {
++        entries.append(.header(id: baseId, section: section, text: title))
++        for count in 0 ... 4 {
++            entries.append(.option(id: baseId + 1 + Int32(count), section: section, key: "\(prefix)Count:\(count)", title: ayoColorCountTitles[count], checked: colors.count == count))
++        }
++        for index in 0 ..< colors.count {
++            entries.append(.color(id: baseId + 10 + Int32(index), section: section, key: "\(prefix)Color:\(index)", title: "Цвет \(index + 1)", color: colors[index]))
++        }
++        entries.append(.color(id: baseId + 20, section: section, key: "\(prefix)Text", title: "Цвет текста", color: textColor == 0 ? nil : textColor))
++        if textColor != 0 {
++            entries.append(.action(id: baseId + 21, section: section, key: "\(prefix)TextReset", title: "Цвет текста: автоматически", destructive: false))
++        }
++    }
++    appendBubbleSection(baseId: 200, section: 2, title: "МОИ СООБЩЕНИЯ", prefix: "out", colors: AyuSettings.outgoingBubbleColors, textColor: AyuSettings.outgoingTextColor)
++    appendBubbleSection(baseId: 300, section: 3, title: "СООБЩЕНИЯ СОБЕСЕДНИКОВ", prefix: "in", colors: AyuSettings.incomingBubbleColors, textColor: AyuSettings.incomingTextColor)
++
++    entries.append(.action(id: 400, section: 4, key: "reset", title: "Сбросить оформление Ayo", destructive: true))
++    entries.append(.footer(id: 401, section: 4, text: "Изменения применяются после перезапуска AyoGram: смахните приложение в переключателе и откройте снова. Автоматический цвет текста подбирается под яркость пузыря."))
++
++    return entries
++}
++
++@available(iOS 14.0, *)
++private final class AyoColorPickerDelegate: NSObject, UIColorPickerViewControllerDelegate {
++    let completion: (UIColor) -> Void
++
++    init(completion: @escaping (UIColor) -> Void) {
++        self.completion = completion
++    }
++
++    func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
++        self.completion(viewController.selectedColor)
++    }
++}
++
++private var ayoColorPickerDelegateKey: UInt8 = 0
++
++private func ayoRGB(_ color: UIColor) -> UInt32 {
++    var r: CGFloat = 0.0
++    var g: CGFloat = 0.0
++    var b: CGFloat = 0.0
++    var a: CGFloat = 0.0
++    color.getRed(&r, green: &g, blue: &b, alpha: &a)
++    let ri = UInt32(max(0.0, min(1.0, r)) * 255.0)
++    let gi = UInt32(max(0.0, min(1.0, g)) * 255.0)
++    let bi = UInt32(max(0.0, min(1.0, b)) * 255.0)
++    let value = (ri << 16) | (gi << 8) | bi
++    // 0 means "automatic" for text colors, keep pure black representable
++    return value == 0 ? 0x010101 : value
++}
++
++private let ayoDefaultBubbleColors: [UInt32] = [0x8A5CF6, 0x5B8CFF, 0x37C2E0, 0x3CD08A]
++
++public func ayoAppearanceController(context: AccountContext) -> ViewController {
++    let refresh = ValuePromise<Int>(0, ignoreRepeated: false)
++    var counter = 0
++    weak var currentController: ViewController?
++
++    func reload() {
++        counter += 1
++        refresh.set(counter)
++    }
++
++    func pickColor(initial: UInt32?, completion: @escaping (UInt32) -> Void) {
++        guard #available(iOS 14.0, *) else {
++            return
++        }
++        guard let controller = currentController, var top = controller.view.window?.rootViewController else {
++            return
++        }
++        while let presented = top.presentedViewController {
++            top = presented
++        }
++        let picker = UIColorPickerViewController()
++        picker.supportsAlpha = false
++        if let initial {
++            picker.selectedColor = UIColor(rgb: initial)
++        }
++        let delegate = AyoColorPickerDelegate(completion: { color in
++            completion(ayoRGB(color))
++        })
++        picker.delegate = delegate
++        objc_setAssociatedObject(picker, &ayoColorPickerDelegateKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
++        top.present(picker, animated: true)
++    }
++
++    func setColors(_ prefix: String, _ colors: [UInt32]) {
++        if prefix == "out" {
++            AyuSettings.outgoingBubbleColors = colors
++        } else {
++            AyuSettings.incomingBubbleColors = colors
++        }
++    }
++
++    func colors(_ prefix: String) -> [UInt32] {
++        return prefix == "out" ? AyuSettings.outgoingBubbleColors : AyuSettings.incomingBubbleColors
++    }
++
++    let arguments = AyoAppearanceArguments(select: { key in
++        let parts = key.split(separator: ":", maxSplits: 1).map(String.init)
++        let name = parts[0]
++        let value = parts.count > 1 ? parts[1] : ""
++        switch name {
++        case "font":
++            AyuSettings.appFont = value
++        case "shape":
++            AyuSettings.bubbleShape = Int(value) ?? 0
++        case "outCount", "inCount":
++            let prefix = name == "outCount" ? "out" : "in"
++            let count = Int(value) ?? 0
++            var current = colors(prefix)
++            while current.count < count {
++                current.append(ayoDefaultBubbleColors[current.count])
++            }
++            if current.count > count {
++                current = Array(current.prefix(count))
++            }
++            setColors(prefix, current)
++        case "outColor", "inColor":
++            let prefix = name == "outColor" ? "out" : "in"
++            let index = Int(value) ?? 0
++            let current = colors(prefix)
++            guard index < current.count else {
++                return
++            }
++            pickColor(initial: current[index], completion: { color in
++                var updated = colors(prefix)
++                if index < updated.count {
++                    updated[index] = color
++                    setColors(prefix, updated)
++                    reload()
++                }
++            })
++            return
++        case "outText", "inText":
++            let isOutgoing = name == "outText"
++            let currentValue = isOutgoing ? AyuSettings.outgoingTextColor : AyuSettings.incomingTextColor
++            pickColor(initial: currentValue == 0 ? nil : currentValue, completion: { color in
++                if isOutgoing {
++                    AyuSettings.outgoingTextColor = color
++                } else {
++                    AyuSettings.incomingTextColor = color
++                }
++                reload()
++            })
++            return
++        case "outTextReset":
++            AyuSettings.outgoingTextColor = 0
++        case "inTextReset":
++            AyuSettings.incomingTextColor = 0
++        case "reset":
++            AyuSettings.appFont = ""
++            AyuSettings.bubbleShape = 0
++            AyuSettings.outgoingBubbleColors = []
++            AyuSettings.incomingBubbleColors = []
++            AyuSettings.outgoingTextColor = 0
++            AyuSettings.incomingTextColor = 0
++        default:
++            break
++        }
++        reload()
++    })
++
++    let signal = combineLatest(queue: .mainQueue(),
++        context.sharedContext.presentationData,
++        refresh.get()
++    )
++    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
++        var presentationData = presentationData
++        presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
++
++        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Оформление Ayo"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: ayoAppearanceEntries(), style: .blocks, animateChanges: false)
++        return (controllerState, (listState, arguments))
++    }
++
++    let controller = ItemListController(context: context, state: signal)
++    currentController = controller
++    return controller
++}
+diff --git a/submodules/SettingsUI/Sources/AyoSettingsController.swift b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+new file mode 100644
+index 00000000..d7f5fa05
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+@@ -0,0 +1,357 @@
++import Foundation
++import UIKit
++import Display
++import SwiftSignalKit
++import TelegramCore
++import TelegramPresentationData
++import ItemListUI
++import PresentationDataUtils
++import AccountContext
++
++private final class AyoArguments {
++    let toggle: (String, Bool) -> Void
++    let select: (String) -> Void
++    init(toggle: @escaping (String, Bool) -> Void, select: @escaping (String) -> Void) {
++        self.toggle = toggle
++        self.select = select
++    }
++}
++
++private enum AyoRow {
++    case header(String)
++    case toggle(key: String, title: String, value: Bool)
++    case option(key: String, title: String, checked: Bool)
++    case disclosure(key: String, title: String, label: String, icon: UIImage?)
++    case action(key: String, title: String, destructive: Bool)
++    case footer(String)
++}
++
++private struct AyoSection {
++    let rows: [AyoRow]
++}
++
++private enum AyoEntry: ItemListNodeEntry {
++    case header(id: Int32, section: Int32, text: String)
++    case toggle(id: Int32, section: Int32, key: String, title: String, value: Bool)
++    case option(id: Int32, section: Int32, key: String, title: String, checked: Bool)
++    case disclosure(id: Int32, section: Int32, key: String, title: String, label: String, icon: UIImage?)
++    case action(id: Int32, section: Int32, key: String, title: String, destructive: Bool)
++    case footer(id: Int32, section: Int32, text: String)
++
++    var section: ItemListSectionId {
++        switch self {
++        case let .header(_, section, _), let .toggle(_, section, _, _, _), let .option(_, section, _, _, _), let .disclosure(_, section, _, _, _, _), let .action(_, section, _, _, _), let .footer(_, section, _):
++            return section
++        }
++    }
++
++    var stableId: Int32 {
++        switch self {
++        case let .header(id, _, _), let .toggle(id, _, _, _, _), let .option(id, _, _, _, _), let .disclosure(id, _, _, _, _, _), let .action(id, _, _, _, _), let .footer(id, _, _):
++            return id
++        }
++    }
++
++    static func ==(lhs: AyoEntry, rhs: AyoEntry) -> Bool {
++        switch (lhs, rhs) {
++        case let (.header(lId, lS, lT), .header(rId, rS, rT)):
++            return lId == rId && lS == rS && lT == rT
++        case let (.toggle(lId, lS, lK, lT, lV), .toggle(rId, rS, rK, rT, rV)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lV == rV
++        case let (.option(lId, lS, lK, lT, lV), .option(rId, rS, rK, rT, rV)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lV == rV
++        case let (.disclosure(lId, lS, lK, lT, lL, _), .disclosure(rId, rS, rK, rT, rL, _)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lL == rL
++        case let (.action(lId, lS, lK, lT, lD), .action(rId, rS, rK, rT, rD)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lD == rD
++        case let (.footer(lId, lS, lT), .footer(rId, rS, rT)):
++            return lId == rId && lS == rS && lT == rT
++        default:
++            return false
++        }
++    }
++
++    static func <(lhs: AyoEntry, rhs: AyoEntry) -> Bool {
++        return lhs.stableId < rhs.stableId
++    }
++
++    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
++        let arguments = arguments as! AyoArguments
++        switch self {
++        case let .header(_, section, text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: section)
++        case let .toggle(_, section, key, title, value):
++            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: section, style: .blocks, updated: { value in
++                arguments.toggle(key, value)
++            })
++        case let .option(_, section, key, title, checked):
++            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: title, style: .left, checked: checked, zeroSeparatorInsets: false, sectionId: section, action: {
++                arguments.select(key)
++            })
++        case let .disclosure(_, section, key, title, label, icon):
++            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: icon, title: title, label: label, labelStyle: .text, sectionId: section, style: .blocks, disclosureStyle: .arrow, action: {
++                arguments.select(key)
++            })
++        case let .action(_, section, key, title, destructive):
++            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: destructive ? .destructive : .generic, alignment: .natural, sectionId: section, style: .blocks, action: {
++                arguments.select(key)
++            })
++        case let .footer(_, section, text):
++            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: section)
++        }
++    }
++}
++
++private func ayoEntries(_ sections: [AyoSection]) -> [AyoEntry] {
++    var entries: [AyoEntry] = []
++    var id: Int32 = 0
++    for (sectionIndex, section) in sections.enumerated() {
++        let sectionId = Int32(sectionIndex)
++        for row in section.rows {
++            switch row {
++            case let .header(text):
++                entries.append(.header(id: id, section: sectionId, text: text))
++            case let .toggle(key, title, value):
++                entries.append(.toggle(id: id, section: sectionId, key: key, title: title, value: value))
++            case let .option(key, title, checked):
++                entries.append(.option(id: id, section: sectionId, key: key, title: title, checked: checked))
++            case let .disclosure(key, title, label, icon):
++                entries.append(.disclosure(id: id, section: sectionId, key: key, title: title, label: label, icon: icon))
++            case let .action(key, title, destructive):
++                entries.append(.action(id: id, section: sectionId, key: key, title: title, destructive: destructive))
++            case let .footer(text):
++                entries.append(.footer(id: id, section: sectionId, text: text))
++            }
++            id += 1
++        }
++    }
++    return entries
++}
++
++private func ayoListController(context: AccountContext, title: String, sectionsBuilder: @escaping () -> [AyoSection], toggle: @escaping (String, Bool) -> Void, select: @escaping (String, AyoArguments) -> Void) -> ViewController {
++    let refresh = ValuePromise<Int>(0, ignoreRepeated: false)
++    var counter = 0
++    func reload() {
++        counter += 1
++        refresh.set(counter)
++    }
++
++    var argumentsRef: AyoArguments?
++    let arguments = AyoArguments(toggle: { key, value in
++        toggle(key, value)
++        reload()
++    }, select: { key in
++        if let argumentsRef {
++            select(key, argumentsRef)
++        }
++    })
++    argumentsRef = arguments
++
++    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, refresh.get())
++    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
++        var presentationData = presentationData
++        presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
++        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(title), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: ayoEntries(sectionsBuilder()), style: .blocks, animateChanges: false)
++        return (controllerState, (listState, arguments))
++    }
++
++    return ItemListController(context: context, state: signal)
++}
++
++// MARK: - Hub
++
++public func ayoSettingsController(context: AccountContext) -> ViewController {
++    weak var hubController: ViewController?
++    let icon = PresentationResourcesSettings.ayoSettings
++
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .disclosure(key: "open:ghost", title: "Режим призрака", label: AyuSettings.ghostModeEnabled ? "Вкл" : "", icon: icon),
++                .disclosure(key: "open:spy", title: "Шпион", label: "", icon: icon),
++                .disclosure(key: "open:custom", title: "Кастомизация", label: "", icon: icon),
++                .disclosure(key: "open:limits", title: "Ограничения", label: "", icon: icon),
++                .disclosure(key: "open:appearance", title: "Оформление", label: "", icon: icon),
++            ]),
++            AyoSection(rows: [
++                .footer("AyoGram — форк Telegram с приватностью и кастомизацией. Часть изменений применяется после перезапуска приложения."),
++            ]),
++        ]
++    }
++
++    let controller = ayoListController(context: context, title: "Ayo настройки", sectionsBuilder: sections, toggle: { _, _ in }, select: { key, _ in
++        guard key.hasPrefix("open:") else {
++            return
++        }
++        let target = String(key.dropFirst("open:".count))
++        let sub: ViewController
++        switch target {
++        case "ghost": sub = ayoGhostController(context: context)
++        case "spy": sub = ayoSpyController(context: context)
++        case "custom": sub = ayoCustomController(context: context)
++        case "limits": sub = ayoLimitsController(context: context)
++        case "appearance": sub = ayoAppearanceController(context: context)
++        default: return
++        }
++        hubController?.push(sub)
++    })
++    hubController = controller
++    return controller
++}
++
++// MARK: - Ghost mode
++
++private func ayoGhostController(context: AccountContext) -> ViewController {
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .header("РЕЖИМ ПРИЗРАКА"),
++                .toggle(key: "master", title: "Режим призрака", value: AyuSettings.ghostModeEnabled),
++                .toggle(key: "read", title: "Не отмечать прочитанным", value: AyuSettings.dontReadMessages),
++                .toggle(key: "typing", title: "Не показывать «печатает»", value: AyuSettings.dontSendTyping),
++                .toggle(key: "online", title: "Не показывать «в сети»", value: AyuSettings.dontSendOnline),
++                .footer("Собеседники не увидят, что вы прочитали сообщение, печатаете или находитесь в приложении."),
++            ]),
++            AyoSection(rows: [
++                .header("ОТПРАВКА"),
++                .toggle(key: "silent", title: "Всегда без звука", value: AyuSettings.sendSilentlyByDefault),
++                .footer("Исходящие сообщения отправляются без звука. Долгое нажатие на «отправить» → «со звуком» по-прежнему работает."),
++            ]),
++        ]
++    }
++    return ayoListController(context: context, title: "Режим призрака", sectionsBuilder: sections, toggle: { key, value in
++        switch key {
++        case "master": AyuSettings.ghostModeEnabled = value
++        case "read": AyuSettings.dontReadMessages = value
++        case "typing": AyuSettings.dontSendTyping = value
++        case "online": AyuSettings.dontSendOnline = value
++        case "silent": AyuSettings.sendSilentlyByDefault = value
++        default: break
++        }
++    }, select: { _, _ in })
++}
++
++// MARK: - Spy
++
++private func ayoSpyController(context: AccountContext) -> ViewController {
++    weak var controllerRef: ViewController?
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .header("ИСТОРИЯ СООБЩЕНИЙ"),
++                .toggle(key: "keepDeleted", title: "Сохранять удалённые", value: AyuSettings.keepDeletedMessages),
++                .toggle(key: "keepEdits", title: "Сохранять историю правок", value: AyuSettings.keepEditHistory),
++                .toggle(key: "translucentDeleted", title: "Удалённые полупрозрачными", value: AyuSettings.translucentDeleted),
++                .toggle(key: "notifyDeletedEdited", title: "Уведомлять об удалении и правках", value: AyuSettings.notifyDeletedEdited),
++                .action(key: "clear", title: "Очистить сохранённую историю", destructive: true),
++                .footer("Удалённые собеседником сообщения остаются в чате с пометкой 🗑. Прошлые версии изменённых сообщений — в меню сообщения → «История правок». Уведомления приходят по личным чатам, пока AyoGram запущен."),
++            ]),
++        ]
++    }
++    let controller = ayoListController(context: context, title: "Шпион", sectionsBuilder: sections, toggle: { key, value in
++        switch key {
++        case "keepDeleted": AyuSettings.keepDeletedMessages = value
++        case "keepEdits": AyuSettings.keepEditHistory = value
++        case "translucentDeleted": AyuSettings.translucentDeleted = value
++        case "notifyDeletedEdited": AyuSettings.notifyDeletedEdited = value
++        default: break
++        }
++    }, select: { key, _ in
++        if key == "clear" {
++            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++            controllerRef?.present(textAlertController(context: context, title: nil, text: "Удалить сохранённые удалённые сообщения и историю правок?", actions: [
++                TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
++                TextAlertAction(type: .defaultDestructiveAction, title: presentationData.strings.Common_Delete, action: {
++                    AyuMessageHistory.shared.clear()
++                })
++            ]), in: .window(.root))
++        }
++    })
++    controllerRef = controller
++    return controller
++}
++
++// MARK: - Customization
++
++private func ayoCustomController(context: AccountContext) -> ViewController {
++    weak var controllerRef: ViewController?
++    let sections: () -> [AyoSection] = {
++        let cacheInterval = AyuSettings.autoCacheCleanInterval
++        return [
++            AyoSection(rows: [
++                .disclosure(key: "appearance", title: "Оформление: цвета, форма, шрифт", label: "", icon: PresentationResourcesSettings.ayoSettings),
++            ]),
++            AyoSection(rows: [
++                .header("ИНТЕРФЕЙС"),
++                .toggle(key: "seconds", title: "Секунды во времени сообщений", value: AyuSettings.showSeconds),
++                .toggle(key: "disableAds", title: "Скрывать рекламу в каналах", value: AyuSettings.disableAds),
++                .toggle(key: "uploadProgress", title: "Проценты загрузки при отправке", value: AyuSettings.showUploadProgress),
++                .toggle(key: "chatListButton", title: "Кнопка Ayo на главном экране", value: AyuSettings.showChatListSettingsButton),
++                .toggle(key: "callLiveActivity", title: "Звонок в Dynamic Island", value: AyuSettings.callLiveActivity),
++                .toggle(key: "unlockFrameRate", title: "60 FPS в камере, кружках и видео", value: AyuSettings.unlockFrameRate),
++            ]),
++            AyoSection(rows: [
++                .header("АВТООЧИСТКА КЭША"),
++                .option(key: "cache:0", title: "Выключена", checked: cacheInterval == 0),
++                .option(key: "cache:-1", title: "При каждом запуске", checked: cacheInterval == -1),
++                .option(key: "cache:86400", title: "Раз в день", checked: cacheInterval == 86400),
++                .option(key: "cache:604800", title: "Раз в неделю", checked: cacheInterval == 604800),
++                .footer("Удаляет скачанные фото, видео, файлы, музыку и истории. Стикеры и аватарки остаются. Сообщения не удаляются — медиа скачается заново при открытии."),
++            ]),
++        ]
++    }
++    let controller = ayoListController(context: context, title: "Кастомизация", sectionsBuilder: sections, toggle: { key, value in
++        switch key {
++        case "seconds": AyuSettings.showSeconds = value
++        case "disableAds": AyuSettings.disableAds = value
++        case "uploadProgress": AyuSettings.showUploadProgress = value
++        case "chatListButton": AyuSettings.showChatListSettingsButton = value
++        case "callLiveActivity": AyuSettings.callLiveActivity = value
++        case "unlockFrameRate": AyuSettings.unlockFrameRate = value
++        default: break
++        }
++    }, select: { key, _ in
++        if key == "appearance" {
++            controllerRef?.push(ayoAppearanceController(context: context))
++            return
++        }
++        if key.hasPrefix("cache:"), let value = Int(key.dropFirst("cache:".count)) {
++            AyuSettings.autoCacheCleanInterval = value
++        }
++    })
++    controllerRef = controller
++    return controller
++}
++
++// MARK: - Limits & restrictions
++
++private func ayoLimitsController(context: AccountContext) -> ViewController {
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .header("ЗАЩИЩЁННЫЕ ЧАТЫ"),
++                .toggle(key: "copy", title: "Обходить запрет копирования", value: AyuSettings.bypassCopyProtection),
++                .toggle(key: "screenshots", title: "Разрешить скриншоты", value: AyuSettings.allowScreenshots),
++                .toggle(key: "screenshotNotify", title: "Не уведомлять о скриншотах", value: AyuSettings.dontNotifyScreenshots),
++                .footer("Копирование, сохранение и скриншоты в защищённых чатах. Изменения применяются после повторного открытия чата."),
++            ]),
++            AyoSection(rows: [
++                .header("ЛИМИТЫ"),
++                .toggle(key: "removeAllLimits", title: "Снять лимиты (закрепы, стикеры, папки…)", value: AyuSettings.removeAllLimits),
++                .footer("Снимает ограничения клиента на число закреплённых чатов, сохранённых стикеров и GIF, папок и т.п. Сервер Telegram всё равно держит свой лимит, поэтому лишние элементы хранятся только на этом устройстве и на других устройствах могут не появиться."),
++            ]),
++        ]
++    }
++    return ayoListController(context: context, title: "Ограничения", sectionsBuilder: sections, toggle: { key, value in
++        switch key {
++        case "copy": AyuSettings.bypassCopyProtection = value
++        case "screenshots": AyuSettings.allowScreenshots = value
++        case "screenshotNotify": AyuSettings.dontNotifyScreenshots = value
++        case "removeAllLimits":
++            AyuSettings.removeAllLimits = value
++            AyuSettings.unlimitedPins = value
++        default: break
++        }
++    }, select: { _, _ in })
++}
+diff --git a/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift b/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
+index 588fc00b..34666817 100644
+--- a/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
++++ b/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
+@@ -201,15 +201,15 @@ public func deleteAccountOptionsController(context: AccountContext, navigationCo
+         |> take(1)
+         |> deliverOnMainQueue
+         ).start(next: { accountAndPeer, accountsAndPeers in
+-            var maximumAvailableAccounts: Int = 3
++            var maximumAvailableAccounts: Int = 1000
+             if accountAndPeer?.1.isPremium == true && !context.account.testingEnvironment {
+-                maximumAvailableAccounts = 4
++                maximumAvailableAccounts = 1000
+             }
+             var count: Int = 1
+             for (accountContext, peer, _) in accountsAndPeers {
+                 if !accountContext.account.testingEnvironment {
+                     if peer.isPremium {
+-                        maximumAvailableAccounts = 4
++                        maximumAvailableAccounts = 1000
+                     }
+                     count += 1
+                 }
+diff --git a/submodules/SettingsUI/Sources/LogoutOptionsController.swift b/submodules/SettingsUI/Sources/LogoutOptionsController.swift
+index a884524f..749cf0c0 100644
+--- a/submodules/SettingsUI/Sources/LogoutOptionsController.swift
++++ b/submodules/SettingsUI/Sources/LogoutOptionsController.swift
+@@ -142,15 +142,15 @@ public func logoutOptionsController(context: AccountContext, navigationControlle
+         |> take(1)
+         |> deliverOnMainQueue
+         ).start(next: { accountAndPeer, accountsAndPeers in
+-            var maximumAvailableAccounts: Int = 3
++            var maximumAvailableAccounts: Int = 1000
+             if accountAndPeer?.1.isPremium == true && !context.account.testingEnvironment {
+-                maximumAvailableAccounts = 4
++                maximumAvailableAccounts = 1000
+             }
+             var count: Int = 1
+             for (accountContext, peer, _) in accountsAndPeers {
+                 if !accountContext.account.testingEnvironment {
+                     if peer.isPremium {
+-                        maximumAvailableAccounts = 4
++                        maximumAvailableAccounts = 1000
+                     }
+                     count += 1
+                 }
+diff --git a/submodules/TelegramCallsUI/BUILD b/submodules/TelegramCallsUI/BUILD
+index 56178cf9..960d600b 100644
+--- a/submodules/TelegramCallsUI/BUILD
++++ b/submodules/TelegramCallsUI/BUILD
+@@ -58,6 +58,7 @@ swift_library(
+         "//submodules/SSignalKit/SSignalKit",
+         "//submodules/Postbox:Postbox",
+     	"//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
++        "//submodules/AyoCallActivity:AyoCallActivity",
+         "//submodules/Display:Display",
+         "//submodules/TelegramPresentationData:TelegramPresentationData",
+         "//submodules/TelegramUIPreferences:TelegramUIPreferences",
+diff --git a/submodules/TelegramCallsUI/Sources/AyoCallLiveActivityManager.swift b/submodules/TelegramCallsUI/Sources/AyoCallLiveActivityManager.swift
+new file mode 100644
+index 00000000..3b682305
+--- /dev/null
++++ b/submodules/TelegramCallsUI/Sources/AyoCallLiveActivityManager.swift
+@@ -0,0 +1,131 @@
++import Foundation
++import SwiftSignalKit
++import TelegramCore
++import AccountContext
++import TelegramAudio
++import AyoCallActivity
++#if canImport(ActivityKit)
++import ActivityKit
++#endif
++
++/// Ayo: mirrors the current 1-on-1 call into a Live Activity (Dynamic Island / lock screen)
++/// and performs the actions of its buttons.
++final class AyoCallLiveActivityManager {
++    private weak var call: PresentationCallImpl?
++    private var stateDisposable: Disposable?
++    private var activity: Any?
++    private var isMuted = false
++    private var isSpeaker = false
++    private var isVideo = false
++
++    init() {
++    }
++
++    deinit {
++        self.stateDisposable?.dispose()
++    }
++
++    func setCall(_ call: PresentationCallImpl?) {
++        if self.call === call {
++            return
++        }
++        self.stateDisposable?.dispose()
++        self.stateDisposable = nil
++        self.endActivity()
++        self.call = call
++
++        guard let call, AyuSettings.callLiveActivity else {
++            return
++        }
++
++        AyoCallActionHandler.handler = { [weak self] action in
++            self?.perform(action)
++        }
++
++        let peerName = call.peer?.compactDisplayTitle ?? ""
++        self.stateDisposable = (combineLatest(queue: .mainQueue(), call.state, call.isMuted, call.audioOutputState)
++        |> deliverOnMainQueue).startStrict(next: { [weak self] state, isMuted, audioOutputState in
++            self?.update(peerName: peerName, state: state, isMuted: isMuted, audioOutput: audioOutputState.1)
++        })
++    }
++
++    private func update(peerName: String, state: PresentationCallState, isMuted: Bool, audioOutput: AudioSessionOutput?) {
++        self.isMuted = isMuted
++        self.isSpeaker = audioOutput == .speaker
++        if case .active = state.videoState {
++            self.isVideo = true
++        } else {
++            self.isVideo = false
++        }
++
++        var connectedSince: Date?
++        let statusText: String
++        switch state.state {
++        case .waiting, .requesting:
++            statusText = "Вызов…"
++        case .ringing:
++            statusText = "Входящий звонок"
++        case .connecting:
++            statusText = "Соединение…"
++        case let .active(startTime, _, _), let .reconnecting(startTime, _, _):
++            connectedSince = Date(timeIntervalSinceReferenceDate: startTime)
++            statusText = ""
++        case .terminating, .terminated:
++            self.endActivity()
++            return
++        }
++
++        if #available(iOS 16.2, *) {
++            let content = AyoCallAttributes.ContentState(connectedSince: connectedSince, statusText: statusText, isMuted: self.isMuted, isSpeaker: self.isSpeaker, isVideo: self.isVideo)
++            if let activity = self.activity as? Activity<AyoCallAttributes> {
++                Task {
++                    await activity.update(ActivityContent(state: content, staleDate: nil))
++                }
++            } else {
++                guard ActivityAuthorizationInfo().areActivitiesEnabled else {
++                    return
++                }
++                let attributes = AyoCallAttributes(peerName: peerName, initials: ayoInitials(peerName))
++                self.activity = try? Activity<AyoCallAttributes>.request(attributes: attributes, content: ActivityContent(state: content, staleDate: nil), pushType: nil)
++            }
++        }
++    }
++
++    private func endActivity() {
++        if #available(iOS 16.2, *) {
++            if let activity = self.activity as? Activity<AyoCallAttributes> {
++                Task {
++                    await activity.end(nil, dismissalPolicy: .immediate)
++                }
++            }
++        }
++        self.activity = nil
++    }
++
++    private func perform(_ action: AyoCallAction) {
++        guard let call = self.call else {
++            return
++        }
++        switch action {
++        case .toggleMute:
++            call.toggleIsMuted()
++        case .toggleSpeaker:
++            call.setCurrentAudioOutput(self.isSpeaker ? .builtin : .speaker)
++        case .toggleVideo:
++            if self.isVideo {
++                call.disableVideo()
++            } else {
++                call.requestVideo()
++            }
++        case .hangUp:
++            let _ = call.hangUp().startStandalone()
++        }
++    }
++}
++
++private func ayoInitials(_ name: String) -> String {
++    let parts = name.split(separator: " ").prefix(2)
++    let letters = parts.compactMap { $0.first }.map { String($0) }
++    let result = letters.joined().uppercased()
++    return result.isEmpty ? "?" : result
++}
+diff --git a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift b/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
+index 1d4c5dae..d5173ff0 100644
+--- a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
++++ b/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
+@@ -54,6 +54,8 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+     private let audioSession: ManagedAudioSession
+     private let callKitIntegration: CallKitIntegration?
+     
++    private let ayoLiveActivityManager = AyoCallLiveActivityManager()
++    
+     private var currentCallValue: PresentationCallImpl?
+     private var currentCall: PresentationCallImpl? {
+         return self.currentCallValue
+@@ -712,6 +714,7 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+         
+         if self.currentCallValue !== value {
+             self.currentCallValue = value
++            self.ayoLiveActivityManager.setCall(value)
+             
+             self.callToConferenceDisposable?.dispose()
+             self.callToConferenceDisposable = nil
+diff --git a/submodules/TelegramCore/Sources/Account/AccountManager.swift b/submodules/TelegramCore/Sources/Account/AccountManager.swift
+index c3c37c55..89bdedcd 100644
+--- a/submodules/TelegramCore/Sources/Account/AccountManager.swift
++++ b/submodules/TelegramCore/Sources/Account/AccountManager.swift
+@@ -266,6 +266,12 @@ public func performAppGroupUpgrades(appGroupPath: String, rootPath: String) {
+     DispatchQueue.global(qos: .default).async {
+         let _ = try? FileManager.default.createDirectory(at: URL(fileURLWithPath: rootPath), withIntermediateDirectories: true, attributes: nil)
+ 
++        // Ayo: in sideloaded builds the "app group" is the app's own Library directory
++        // (see AppDelegate fallback); never wipe system folders and our own data there.
++        if URL(fileURLWithPath: appGroupPath).lastPathComponent == "Library" {
++            return
++        }
++
+         if let items = FileManager.default.enumerator(at: URL(fileURLWithPath: appGroupPath), includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants], errorHandler: nil) {
+             let allowedDirectories: [String] = [
+                 "telegram-data",
+diff --git a/submodules/TelegramCore/Sources/AyuMessageHistory.swift b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
+new file mode 100644
+index 00000000..7883af7d
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
+@@ -0,0 +1,176 @@
++import Foundation
++import Postbox
++import UserNotifications
++
++/// AyuGram-style local message history: remembers which messages were deleted
++/// by the other side and the previous texts of edited messages.
++/// Stored as a JSON file in the app's Library directory, independent of Postbox.
++public final class AyuMessageHistory {
++    public struct EditEntry: Codable, Equatable {
++        public let date: Int32
++        public let text: String
++    }
++
++    private struct Storage: Codable {
++        var deleted: [String: Int32] = [:]
++        var edits: [String: [EditEntry]] = [:]
++    }
++
++    public static let shared = AyuMessageHistory()
++
++    private let lock = NSLock()
++    private var storage: Storage
++    private let path: String
++    private let saveQueue = DispatchQueue(label: "org.ayogram.message-history")
++    private var saveScheduled = false
++
++    private static let maxEditsPerMessage = 50
++
++    private init() {
++        // Kept outside of Telegram's data and cache folders so cache cleanup never touches it.
++        let baseUrl = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
++        let directoryUrl = baseUrl.appendingPathComponent("AyoGram", isDirectory: true)
++        let _ = try? FileManager.default.createDirectory(at: directoryUrl, withIntermediateDirectories: true, attributes: nil)
++        self.path = directoryUrl.appendingPathComponent("message-history.json").path
++
++        if let data = try? Data(contentsOf: URL(fileURLWithPath: self.path)), let decoded = try? JSONDecoder().decode(Storage.self, from: data) {
++            self.storage = decoded
++        } else {
++            self.storage = Storage()
++        }
++    }
++
++    private static func key(_ id: MessageId) -> String {
++        return "\(id.peerId.toInt64()):\(id.namespace):\(id.id)"
++    }
++
++    public func isDeleted(_ id: MessageId) -> Bool {
++        self.lock.lock()
++        defer { self.lock.unlock() }
++        return self.storage.deleted[AyuMessageHistory.key(id)] != nil
++    }
++
++    public func edits(for id: MessageId) -> [EditEntry] {
++        self.lock.lock()
++        defer { self.lock.unlock() }
++        return self.storage.edits[AyuMessageHistory.key(id)] ?? []
++    }
++
++    public func markDeleted(_ ids: [MessageId], date: Int32) {
++        if ids.isEmpty {
++            return
++        }
++        self.lock.lock()
++        for id in ids {
++            self.storage.deleted[AyuMessageHistory.key(id)] = date
++        }
++        self.lock.unlock()
++        self.scheduleSave()
++    }
++
++    public func recordEdit(_ id: MessageId, previousText: String, date: Int32) {
++        let key = AyuMessageHistory.key(id)
++        self.lock.lock()
++        var entries = self.storage.edits[key] ?? []
++        if entries.last?.text != previousText {
++            entries.append(EditEntry(date: date, text: previousText))
++            if entries.count > AyuMessageHistory.maxEditsPerMessage {
++                entries.removeFirst(entries.count - AyuMessageHistory.maxEditsPerMessage)
++            }
++            self.storage.edits[key] = entries
++        }
++        self.lock.unlock()
++        self.scheduleSave()
++    }
++
++    public func clear() {
++        self.lock.lock()
++        self.storage = Storage()
++        self.lock.unlock()
++        self.scheduleSave()
++    }
++
++    private func scheduleSave() {
++        self.lock.lock()
++        if self.saveScheduled {
++            self.lock.unlock()
++            return
++        }
++        self.saveScheduled = true
++        self.lock.unlock()
++
++        self.saveQueue.asyncAfter(deadline: .now() + 0.3, execute: { [weak self] in
++            guard let self else {
++                return
++            }
++            self.lock.lock()
++            let snapshot = self.storage
++            self.saveScheduled = false
++            self.lock.unlock()
++
++            if let data = try? JSONEncoder().encode(snapshot) {
++                let _ = try? data.write(to: URL(fileURLWithPath: self.path), options: .atomic)
++            }
++        })
++    }
++}
++
++/// Keeps messages deleted by the server in Postbox and remembers them as deleted.
++/// Returns the ids that still have to be deleted for real (not present locally).
++func ayoKeepDeletedMessages(transaction: Transaction, ids: [MessageId]) -> [MessageId] {
++    var kept: [MessageId] = []
++    var remaining: [MessageId] = []
++    for id in ids {
++        // Only regular cloud messages: scheduled/quick-reply copies are removed by the server on send.
++        if id.namespace == Namespaces.Message.Cloud && transaction.getMessage(id) != nil {
++            kept.append(id)
++        } else {
++            remaining.append(id)
++        }
++    }
++    if kept.isEmpty {
++        return remaining
++    }
++    let timestamp = Int32(CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970)
++    AyuMessageHistory.shared.markDeleted(kept, date: timestamp)
++    if AyuSettings.notifyDeletedEdited {
++        for id in kept {
++            if let message = transaction.getMessage(id), ayoShouldNotify(message) {
++                let name = message.author?.debugDisplayTitle ?? ""
++                ayoPostNotification(title: "🗑 \(name) удалил(а) сообщение", body: ayoPreviewText(message.text))
++            }
++        }
++    }
++    for id in kept {
++        // Rewrite the message unchanged so chat views re-render it with the deleted mark.
++        transaction.updateMessage(id, update: { currentMessage in
++            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init), authorId: currentMessage.author?.id, text: currentMessage.text, attributes: currentMessage.attributes, media: currentMessage.media))
++        })
++    }
++    return remaining
++}
++
++/// Only incoming messages in private chats, to avoid noise from groups and channels.
++func ayoShouldNotify(_ message: Message) -> Bool {
++    return message.flags.contains(.Incoming) && message.id.peerId.namespace == Namespaces.Peer.CloudUser
++}
++
++func ayoPreviewText(_ text: String) -> String {
++    if text.isEmpty {
++        return "[медиа]"
++    }
++    if text.count > 300 {
++        return String(text.prefix(300)) + "…"
++    }
++    return text
++}
++
++func ayoPostNotification(title: String, body: String) {
++    let content = UNMutableNotificationContent()
++    content.title = title
++    content.body = body
++    content.sound = UNNotificationSound.default
++    content.userInfo = ["ayo": true]
++    let request = UNNotificationRequest(identifier: "ayo-\(UUID().uuidString)", content: content, trigger: nil)
++    UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
++}
+diff --git a/submodules/TelegramCore/Sources/AyuSettings.swift b/submodules/TelegramCore/Sources/AyuSettings.swift
+new file mode 100644
+index 00000000..4392c274
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/AyuSettings.swift
+@@ -0,0 +1,169 @@
++import Foundation
++
++/// AyuGram-style local settings. Stored in UserDefaults so they can be read
++/// synchronously from any thread (network layer, UI).
++public enum AyuSettings {
++    private static let defaults = UserDefaults.standard
++
++    private static func readFlag(_ key: String, _ def: Bool = false) -> Bool {
++        if defaults.object(forKey: key) == nil { return def }
++        return defaults.bool(forKey: key)
++    }
++    private static func writeFlag(_ key: String, _ value: Bool) {
++        defaults.set(value, forKey: key)
++    }
++
++    private static func readInt(_ key: String, _ def: Int = 0) -> Int {
++        if defaults.object(forKey: key) == nil { return def }
++        return defaults.integer(forKey: key)
++    }
++    private static func writeInt(_ key: String, _ value: Int) {
++        defaults.set(value, forKey: key)
++    }
++
++    /// Automatic media cache cleanup: 0 = off, -1 = on every launch, otherwise interval in seconds.
++    public static var autoCacheCleanInterval: Int {
++        get { return readInt("ayo.autoCacheCleanInterval") }
++        set { writeInt("ayo.autoCacheCleanInterval", newValue) }
++    }
++
++    private static func readColors(_ key: String) -> [UInt32] {
++        guard let values = defaults.array(forKey: key) as? [NSNumber] else { return [] }
++        return values.map { $0.uint32Value }
++    }
++    private static func writeColors(_ key: String, _ value: [UInt32]) {
++        if value.isEmpty {
++            defaults.removeObject(forKey: key)
++        } else {
++            defaults.set(value.map { NSNumber(value: $0) }, forKey: key)
++        }
++    }
++
++    // Appearance (applied when the theme is rebuilt / after restart)
++    /// "" = system, "rounded", "serif", "mono" or a font family name. Read directly by Display/Font.swift.
++    public static var appFont: String {
++        get { return defaults.string(forKey: "ayo.appFont") ?? "" }
++        set { defaults.set(newValue, forKey: "ayo.appFont") }
++    }
++    /// 0 = default, 1 = no tail, 2 = equal corners, 3 = rectangular
++    public static var bubbleShape: Int {
++        get { return readInt("ayo.bubbleShape") }
++        set { writeInt("ayo.bubbleShape", newValue) }
++    }
++    /// 0xRRGGBB colors, 1–4 entries make a gradient; empty = theme default
++    public static var outgoingBubbleColors: [UInt32] {
++        get { return readColors("ayo.outgoingBubbleColors") }
++        set { writeColors("ayo.outgoingBubbleColors", newValue) }
++    }
++    public static var incomingBubbleColors: [UInt32] {
++        get { return readColors("ayo.incomingBubbleColors") }
++        set { writeColors("ayo.incomingBubbleColors", newValue) }
++    }
++    /// 0 = automatic
++    public static var outgoingTextColor: UInt32 {
++        get { return UInt32(truncatingIfNeeded: readInt("ayo.outgoingTextColor")) }
++        set { writeInt("ayo.outgoingTextColor", Int(newValue)) }
++    }
++    public static var incomingTextColor: UInt32 {
++        get { return UInt32(truncatingIfNeeded: readInt("ayo.incomingTextColor")) }
++        set { writeInt("ayo.incomingTextColor", Int(newValue)) }
++    }
++
++    // Ghost mode
++    public static var dontReadMessages: Bool {
++        get { return readFlag("ayo.dontRead") }
++        set { writeFlag("ayo.dontRead", newValue) }
++    }
++    public static var dontSendTyping: Bool {
++        get { return readFlag("ayo.dontTyping") }
++        set { writeFlag("ayo.dontTyping", newValue) }
++    }
++    public static var dontSendOnline: Bool {
++        get { return readFlag("ayo.dontOnline") }
++        set { writeFlag("ayo.dontOnline", newValue) }
++    }
++    // Restrictions
++    public static var bypassCopyProtection: Bool {
++        get { return readFlag("ayo.bypassCopyProtection", true) }
++        set { writeFlag("ayo.bypassCopyProtection", newValue) }
++    }
++    /// Also read directly from ObjC (UIKitRuntimeUtils) under the same key.
++    public static var allowScreenshots: Bool {
++        get { return readFlag("ayo.allowScreenshots", true) }
++        set { writeFlag("ayo.allowScreenshots", newValue) }
++    }
++    public static var dontNotifyScreenshots: Bool {
++        get { return readFlag("ayo.dontNotifyScreenshots", true) }
++        set { writeFlag("ayo.dontNotifyScreenshots", newValue) }
++    }
++
++    // Message history
++    public static var keepDeletedMessages: Bool {
++        get { return readFlag("ayo.keepDeletedMessages", true) }
++        set { writeFlag("ayo.keepDeletedMessages", newValue) }
++    }
++    public static var notifyDeletedEdited: Bool {
++        get { return readFlag("ayo.notifyDeletedEdited", true) }
++        set { writeFlag("ayo.notifyDeletedEdited", newValue) }
++    }
++    public static var keepEditHistory: Bool {
++        get { return readFlag("ayo.keepEditHistory", true) }
++        set { writeFlag("ayo.keepEditHistory", newValue) }
++    }
++
++    // Interface
++    public static var showSeconds: Bool {
++        get { return readFlag("ayo.showSeconds", false) }
++        set { writeFlag("ayo.showSeconds", newValue) }
++    }
++    public static var translucentDeleted: Bool {
++        get { return readFlag("ayo.translucentDeleted", true) }
++        set { writeFlag("ayo.translucentDeleted", newValue) }
++    }
++    public static var disableAds: Bool {
++        get { return readFlag("ayo.disableAds", true) }
++        set { writeFlag("ayo.disableAds", newValue) }
++    }
++    public static var sendSilentlyByDefault: Bool {
++        get { return readFlag("ayo.sendSilentlyByDefault", false) }
++        set { writeFlag("ayo.sendSilentlyByDefault", newValue) }
++    }
++    /// Lift client-side collection limits (pins, saved stickers/gifs, folders, …).
++    /// The server still enforces its own caps; extra entries live only on this device.
++    public static var removeAllLimits: Bool {
++        get { return readFlag("ayo.removeAllLimits", true) }
++        set { writeFlag("ayo.removeAllLimits", newValue) }
++    }
++
++    // Misc
++    public static var unlockFrameRate: Bool {
++        get { return readFlag("ayo.unlockFrameRate", true) }
++        set { writeFlag("ayo.unlockFrameRate", newValue) }
++    }
++    public static var unlimitedPins: Bool {
++        get { return readFlag("ayo.unlimitedPins", true) }
++        set { writeFlag("ayo.unlimitedPins", newValue) }
++    }
++    public static var callLiveActivity: Bool {
++        get { return readFlag("ayo.callLiveActivity", true) }
++        set { writeFlag("ayo.callLiveActivity", newValue) }
++    }
++    public static var showUploadProgress: Bool {
++        get { return readFlag("ayo.showUploadProgress", true) }
++        set { writeFlag("ayo.showUploadProgress", newValue) }
++    }
++    public static var showChatListSettingsButton: Bool {
++        get { return readFlag("ayo.showChatListSettingsButton", true) }
++        set { writeFlag("ayo.showChatListSettingsButton", newValue) }
++    }
++
++    /// Master switch: turns all three on/off at once.
++    public static var ghostModeEnabled: Bool {
++        get { return dontReadMessages && dontSendTyping && dontSendOnline }
++        set {
++            dontReadMessages = newValue
++            dontSendTyping = newValue
++            dontSendOnline = newValue
++        }
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
+index 3dc6c7d5..cedd6b9b 100644
+--- a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
++++ b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
+@@ -992,7 +992,10 @@ private func validateBatch(postbox: Postbox, network: Network, transaction: Tran
+                                         return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: updatedTags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                                     })
+                                 } else {
+-                                    _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
++                                    let ayoIdsToDelete = AyuSettings.keepDeletedMessages ? ayoKeepDeletedMessages(transaction: transaction, ids: [id]) : [id]
++                                    if !ayoIdsToDelete.isEmpty {
++                                        _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: ayoIdsToDelete)
++                                    }
+                                     Logger.shared.log("HistoryValidation", "deleting message \(id) in \(id.peerId)")
+                                 }
+                             }
+@@ -1175,7 +1178,10 @@ private func validateReplyThreadBatch(postbox: Postbox, network: Network, transa
+                 
+                     for id in removedMessageIds {
+                         if !validMessageIds.contains(id) {
+-                            _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
++                            let ayoIdsToDelete = AyuSettings.keepDeletedMessages ? ayoKeepDeletedMessages(transaction: transaction, ids: [id]) : [id]
++                            if !ayoIdsToDelete.isEmpty {
++                                _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: ayoIdsToDelete)
++                            }
+                             Logger.shared.log("HistoryValidation", "deleting thread message \(id) in \(id.peerId)")
+                         }
+                     }
+diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+index 7256668b..9edf97a0 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+@@ -53,7 +53,7 @@ private final class AccountPresenceManagerImpl {
+             }, queue: self.queue)
+             self.onlineTimer = timer
+             timer.start()
+-            request = self.network.request(Api.functions.account.updateStatus(offline: .boolFalse))
++            request = self.network.request(Api.functions.account.updateStatus(offline: AyuSettings.dontSendOnline ? .boolTrue : .boolFalse))
+         } else {
+             self.onlineTimer?.invalidate()
+             self.onlineTimer = nil
+diff --git a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
+index e8e08874..35b137a2 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
+@@ -142,6 +142,9 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
+ }
+ 
+ private func requestActivity(postbox: Postbox, network: Network, accountPeerId: PeerId, peerId: PeerId, threadId: Int64?, activity: PeerInputActivity?) -> Signal<Void, NoError> {
++    if AyuSettings.dontSendTyping {
++        return .complete()
++    }
+     return postbox.transaction { transaction -> Signal<Void, NoError> in
+         if let peer = transaction.getPeer(peerId) {
+             if peerId == accountPeerId {
+diff --git a/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift b/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
+index cf1ab15d..a523194d 100644
+--- a/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
++++ b/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
+@@ -274,20 +274,32 @@ extension ReplayContext {
+     }
+     
+     func applyDeleteMessagesWithGlobalIds(_ ids: [Int32]) {
+-        var resourceIds: [MediaResourceId] = []
+-        transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+-            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+-        })
+-        if !resourceIds.isEmpty {
+-            let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++        if AyuSettings.keepDeletedMessages {
++            // Ayo: keep messages deleted by the other side, only mark them as deleted
++            let _ = ayoKeepDeletedMessages(transaction: transaction, ids: transaction.messageIdsForGlobalIds(ids))
++        } else {
++            var resourceIds: [MediaResourceId] = []
++            transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
++                addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
++            })
++            if !resourceIds.isEmpty {
++                let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++            }
+         }
+         deletedMessageIds.append(contentsOf: ids.map { .global($0) })
+     }
+     
+     func applyDeleteMessages(_ ids: [MessageId]) {
+-        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+-            self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+-        })
++        var idsToDelete = ids
++        if AyuSettings.keepDeletedMessages {
++            // Ayo: keep messages deleted by the other side, only mark them as deleted
++            idsToDelete = ayoKeepDeletedMessages(transaction: transaction, ids: ids)
++        }
++        if !idsToDelete.isEmpty {
++            _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
++                self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
++            })
++        }
+         deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
+     }
+     
+@@ -307,6 +319,18 @@ extension ReplayContext {
+     func applyEditMessage(_ id: MessageId, _ message: StoreMessage) {
+         var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+         transaction.updateMessage(id, update: { previousMessage in
++            if AyuSettings.keepEditHistory && previousMessage.text != message.text && !previousMessage.text.isEmpty {
++                // Ayo: remember the previous text together with the time it was written
++                var previousDate = previousMessage.timestamp
++                if let editedAttribute = previousMessage.attributes.first(where: { $0 is EditedMessageAttribute }) as? EditedMessageAttribute {
++                    previousDate = editedAttribute.date
++                }
++                AyuMessageHistory.shared.recordEdit(id, previousText: previousMessage.text, date: previousDate)
++                if AyuSettings.notifyDeletedEdited && ayoShouldNotify(previousMessage) {
++                    let name = previousMessage.author?.debugDisplayTitle ?? ""
++                    ayoPostNotification(title: "✏️ \(name) изменил(а) сообщение", body: "Было: \(ayoPreviewText(previousMessage.text))\nСтало: \(ayoPreviewText(message.text))")
++                }
++            }
+             let peers: [PeerId:Peer] = previousMessage.peers.reduce([:], { current, value in
+                 var current = current
+                 current[value.0] = value.1
+diff --git a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
+index b2e65895..7ec705ad 100644
+--- a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
++++ b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
+@@ -252,6 +252,10 @@ private func validatePeerReadState(network: Network, postbox: Postbox, stateMana
+ }
+ 
+ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager: AccountStateManager, peerId: PeerId, readState: PeerReadState) -> Signal<PeerReadState, PeerReadStateValidationError> {
++    if AyuSettings.dontReadMessages {
++        // Ghost mode: keep the read state local, do not tell the server.
++        return .single(readState)
++    }
+     if peerId.namespace == Namespaces.Peer.SecretChat {
+         // Decide whether a request is needed before looking the peer up: inputSecretChat goes
+         // through loadedPeerWithId, which never emits when the peer row is missing and fails
+diff --git a/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift b/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
+index 4aaa1a66..b635fa3f 100644
+--- a/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
++++ b/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
+@@ -187,5 +187,19 @@ extension UserLimitsConfiguration {
+         self.maxBotsCreated = getValue("bots_create_limit", orElse: defaultValue.maxBotsCreated)
+         self.maxOwnedAITextStyles = getValue("aicompose_tone_saved_limit", orElse: defaultValue.maxBotsCreated)
+         self.maxMessageLength = getValue("message_length_limit", orElse: defaultValue.maxMessageLength)
++
++        // Ayo: lift client-side collection limits (server still enforces its own caps).
++        if AyuSettings.removeAllLimits {
++            let big: Int32 = 1_000_000
++            self.maxPinnedChatCount = max(self.maxPinnedChatCount, big)
++            self.maxPinnedSavedChatCount = max(self.maxPinnedSavedChatCount, big)
++            self.maxArchivedPinnedChatCount = max(self.maxArchivedPinnedChatCount, big)
++            self.maxChannelsCount = max(self.maxChannelsCount, big)
++            self.maxPublicLinksCount = max(self.maxPublicLinksCount, big)
++            self.maxSavedGifCount = max(self.maxSavedGifCount, big)
++            self.maxFavedStickerCount = max(self.maxFavedStickerCount, big)
++            self.maxFoldersCount = max(self.maxFoldersCount, big)
++            self.maxFolderChatsCount = max(self.maxFolderChatsCount, big)
++        }
+     }
+ }
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+index a8e5b04b..a05e93b8 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+@@ -635,6 +635,9 @@ public class AdMessagesHistoryContext {
+     public let messageId: EngineMessage.Id?
+     
+     public var state: Signal<(interPostInterval: Int32?, messages: [Message], startDelay: Int32?, betweenDelay: Int32?), NoError> {
++        if AyuSettings.disableAds {
++            return .single((interPostInterval: nil, messages: [], startDelay: nil, betweenDelay: nil))
++        }
+         return Signal { subscriber in
+             let disposable = MetaDisposable()
+             
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
+index aa11e522..dd5bbb3a 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
+@@ -57,7 +57,7 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
+             }
+             
+             let count = sameKind.count + additionalCount
+-            if count > limitCount, itemIds.firstIndex(of: itemId) == nil {
++            if count > limitCount, !AyuSettings.unlimitedPins, itemIds.firstIndex(of: itemId) == nil {
+                 return .limitExceeded(count: sameKind.count, limit: limitCount)
+             } else {
+                 if let index = itemIds.firstIndex(of: itemId) {
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift b/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
+index 9e71173b..890af2f2 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
+@@ -315,7 +315,7 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
+                                         let botCanManageEmojiStatus = (userFullFlags2 & (1 << 10)) != 0
+                                         let displayGiftButton = (userFullFlags2 & (1 << 16)) != 0
+                                         let myCopyProtectionEnabled = (userFullFlags2 & (1 << 23)) != 0
+-                                        let copyProtectionEnabled = (userFullFlags2 & (1 << 24)) != 0
++                                        let copyProtectionEnabled = (userFullFlags2 & (1 << 24)) != 0 && !AyuSettings.bypassCopyProtection
+                                         let unofficialSecurityRisk = (userFullFlags2 & (1 << 26)) != 0
+                                     
+                                         var flags: CachedUserFlags = previous.flags
+diff --git a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
+index 5e2bce1e..d2714adc 100644
+--- a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
++++ b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
+@@ -536,6 +536,9 @@ public extension Message {
+     }
+     
+     func isCopyProtected() -> Bool {
++        if AyuSettings.bypassCopyProtection {
++            return false
++        }
+         if self.flags.contains(.CopyProtected) {
+             return true
+         } else if let group = self.peers[self.id.peerId] as? TelegramGroup, group.flags.contains(.copyProtectionEnabled) {
+diff --git a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
+index ef64c4b8..af724ab9 100644
+--- a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
++++ b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
+@@ -270,6 +270,9 @@ public extension Peer {
+     }
+     
+     var isCopyProtectionEnabled: Bool {
++        if AyuSettings.bypassCopyProtection {
++            return false
++        }
+         switch self {
+         case let group as TelegramGroup:
+             return group.flags.contains(.copyProtectionEnabled)
+diff --git a/submodules/TelegramPresentationData/Sources/AyoAppearance.swift b/submodules/TelegramPresentationData/Sources/AyoAppearance.swift
+new file mode 100644
+index 00000000..462dbcef
+--- /dev/null
++++ b/submodules/TelegramPresentationData/Sources/AyoAppearance.swift
+@@ -0,0 +1,56 @@
++import Foundation
++import UIKit
++import Display
++import TelegramCore
++
++/// Ayo: user overrides for message bubble and text colors (Ayo settings → Оформление).
++func ayoApplyAppearance(_ theme: PresentationTheme) -> PresentationTheme {
++    let outgoingColors = AyuSettings.outgoingBubbleColors
++    let incomingColors = AyuSettings.incomingBubbleColors
++    let outgoingTextColor = AyuSettings.outgoingTextColor
++    let incomingTextColor = AyuSettings.incomingTextColor
++    if outgoingColors.isEmpty && incomingColors.isEmpty && outgoingTextColor == 0 && incomingTextColor == 0 {
++        return theme
++    }
++
++    let message = theme.chat.message.withUpdated(
++        incoming: ayoApplyBubbleColors(theme.chat.message.incoming, colors: incomingColors, textColor: incomingTextColor),
++        outgoing: ayoApplyBubbleColors(theme.chat.message.outgoing, colors: outgoingColors, textColor: outgoingTextColor)
++    )
++    return PresentationTheme(name: theme.name, index: theme.index, referenceTheme: theme.referenceTheme, overallDarkAppearance: theme.overallDarkAppearance, intro: theme.intro, passcode: theme.passcode, rootController: theme.rootController, list: theme.list, chatList: theme.chatList, chat: theme.chat.withUpdated(message: message), actionSheet: theme.actionSheet, contextMenu: theme.contextMenu, inAppNotification: theme.inAppNotification, chart: theme.chart, preview: theme.preview)
++}
++
++private func ayoApplyBubbleColors(_ parted: PresentationThemePartedColors, colors: [UInt32], textColor: UInt32) -> PresentationThemePartedColors {
++    var result = parted
++    if !colors.isEmpty {
++        let fill = colors.map { UIColor(rgb: $0) }
++        let highlightedFill = fill[0].withMultipliedBrightnessBy(0.85)
++        let withWallpaper = parted.bubble.withWallpaper.withUpdated(fill: fill, highlightedFill: highlightedFill, stroke: .clear)
++        let withoutWallpaper = parted.bubble.withoutWallpaper.withUpdated(fill: fill, highlightedFill: highlightedFill, stroke: .clear)
++        result = result.withUpdated(bubble: parted.bubble.withUpdated(withWallpaper: withWallpaper, withoutWallpaper: withoutWallpaper))
++    }
++
++    var primaryTextColor: UIColor?
++    if textColor != 0 {
++        primaryTextColor = UIColor(rgb: textColor)
++    } else if !colors.isEmpty {
++        primaryTextColor = ayoContrastingTextColor(colors)
++    }
++    if let primaryTextColor {
++        let secondaryTextColor = primaryTextColor.withAlphaComponent(0.6)
++        result = result.withUpdated(primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, fileTitleColor: primaryTextColor, fileDescriptionColor: secondaryTextColor, fileDurationColor: secondaryTextColor)
++    }
++    return result
++}
++
++private func ayoContrastingTextColor(_ colors: [UInt32]) -> UIColor {
++    var luminance: CGFloat = 0.0
++    for color in colors {
++        let r = CGFloat((color >> 16) & 0xff) / 255.0
++        let g = CGFloat((color >> 8) & 0xff) / 255.0
++        let b = CGFloat(color & 0xff) / 255.0
++        luminance += 0.299 * r + 0.587 * g + 0.114 * b
++    }
++    luminance /= CGFloat(colors.count)
++    return luminance > 0.62 ? UIColor.black : UIColor.white
++}
+diff --git a/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift b/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift
+index 77fbbdd7..f6f12a18 100644
+--- a/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift
++++ b/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift
+@@ -84,7 +84,24 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
+     return messageBubbleImage(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius, incoming: incoming, fillColor: fillColor, strokeColor: strokeColor, neighbors: neighbors, shadow: bubbleColors.bubble.withWallpaper.shadow, wallpaper: wallpaper, knockout: knockoutValue, mask: mask, extendedEdges: extendedEdges, onlyOutline: onlyOutline, onlyShadow: onlyShadow, alwaysFillColor: alwaysFillColor, tail: tail)
+ }
+ 
++// Ayo: bubble shape (Ayo settings): 0 = default, 1 = no tail, 2 = equal corners, 3 = rectangular.
++private func ayoBubbleShape(maxCornerRadius: CGFloat, minCornerRadius: CGFloat) -> (max: CGFloat, min: CGFloat, noTail: Bool) {
++    switch AyuSettings.bubbleShape {
++    case 1:
++        return (maxCornerRadius, minCornerRadius, true)
++    case 2:
++        return (maxCornerRadius, maxCornerRadius, true)
++    case 3:
++        return (4.0, 4.0, true)
++    default:
++        return (maxCornerRadius, minCornerRadius, false)
++    }
++}
++
+ public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, neighbors: MessageBubbleImageNeighbors) -> (topLeftRadius: CGFloat, topRightRadius: CGFloat, bottomLeftRadius: CGFloat, bottomRightRadius: CGFloat, drawTail: Bool) {
++    let ayoShape = ayoBubbleShape(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius)
++    let maxCornerRadius = ayoShape.max
++    let minCornerRadius = ayoShape.min
+     var topLeftRadius: CGFloat
+     var topRightRadius: CGFloat
+     var bottomLeftRadius: CGFloat
+@@ -139,11 +156,17 @@ public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CG
+         bottomRightRadius = bottomLeftRadius
+         bottomLeftRadius = tmp
+     }
++    if ayoShape.noTail {
++        drawTail = false
++    }
+     
+     return (topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, drawTail)
+ }
+ 
+ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, shadow: PresentationThemeBubbleShadow?, wallpaper: TelegramWallpaper, knockout knockoutValue: Bool, mask: Bool = false, extendedEdges: Bool = false, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false, tail: Bool = true) -> UIImage {
++    let ayoShape = ayoBubbleShape(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius)
++    let maxCornerRadius = ayoShape.max
++    let minCornerRadius = ayoShape.min
+     let topLeftRadius: CGFloat
+     let topRightRadius: CGFloat
+     let bottomLeftRadius: CGFloat
+@@ -193,6 +216,9 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
+         drawTail = false
+     }
+     
++    if ayoShape.noTail {
++        drawTail = false
++    }
+     let fixedMainDiameter: CGFloat = 33.0
+     let innerSize = CGSize(width: fixedMainDiameter + 6.0, height: fixedMainDiameter)
+     let strokeInset: CGFloat = 1.0
+diff --git a/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift b/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
+index bbf371fc..1a6bd2fd 100644
+--- a/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
++++ b/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
+@@ -168,7 +168,7 @@ public func makePresentationTheme(mediaBox: MediaBox, themeReference: Presentati
+                 return nil
+             }
+     }
+-    return theme
++    return ayoApplyAppearance(theme)
+ }
+ 
+ /// The theme with bubble mode off, built once from the mode's own theme choice and recoloured for the plain page. Both
+diff --git a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
+index 4f127c17..a02e4340 100644
+--- a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
++++ b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
+@@ -130,6 +130,7 @@ public struct PresentationResourcesSettings {
+     public static let appearance = renderSettingsIcon(name: "Item List/Icons/Appearance", backgroundColors: [colorLightBlue])
+     public static let language = renderSettingsIcon(name: "Item List/Icons/Language", backgroundColors: [colorPurple])
+     public static let powerSaving = renderSettingsIcon(name: "Item List/Icons/PowerSaving", backgroundColors: [colorOrange])
++    public static let ayoSettings = renderSettingsIcon(name: "Item List/Icons/AyoGhost", backgroundColors: [UIColor(rgb: 0xA974FF), UIColor(rgb: 0x6A3BE0)])
+     public static let business = renderSettingsIcon(name: "Item List/Icons/Business", backgroundColors: [UIColor(rgb: 0xA95CE3), UIColor(rgb: 0xF16B80)])
+     public static let myProfile = renderSettingsIcon(name: "Item List/Icons/Profile", backgroundColors: [colorRed])
+     
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+index 50540f7a..3f139393 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+@@ -4423,6 +4423,12 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+         strongSelf.contentContainersWrapperNode.frame = CGRect(origin: CGPoint(), size: layout.contentSize)
+         
+         strongSelf.appliedItem = item
++        // Ayo: translucent bubbles for messages deleted by the other side
++        if AyuSettings.translucentDeleted {
++            strongSelf.mainContextSourceNode.contentNode.alpha = AyuMessageHistory.shared.isDeleted(item.content.firstMessage.id) ? 0.5 : 1.0
++        } else {
++            strongSelf.mainContextSourceNode.contentNode.alpha = 1.0
++        }
+         strongSelf.appliedForwardInfo = ChatMessageAppliedForwardInfo(messageId: item.content.firstMessage.id, source: forwardSource, authorSignature: forwardAuthorSignature)
+         strongSelf.updateAccessibilityData(accessibilityData)
+         strongSelf.disablesComments = disablesComments
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+index bf71cb20..c0a6ad25 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+@@ -163,7 +163,7 @@ public func stringForMessageTimestampStatus(
+         timestamp = orignalDate
+     }
+     
+-    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)
++    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: AyuSettings.showSeconds)
+     if timestamp == scheduleWhenOnlineTimestamp {
+         dateText = "         "
+     }
+@@ -258,5 +258,10 @@ public func stringForMessageTimestampStatus(
+         }
+     }
+     
++    // Ayo: mark messages that were deleted by the other side
++    if AyuMessageHistory.shared.isDeleted(message.id) {
++        dateText = "🗑 \(dateText)"
++    }
++    
+     return dateText
+ }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
+index 7f64f67d..730f3a5c 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
+@@ -1720,7 +1720,12 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+                             let progress = max(0.0, min(1.0, progress))
+                             let compactString = dataSizeString(Int(Float(size) * progress), forceDecimal: true, formatting: DataSizeStringFormatting(chatPresentationData: presentationData))
+                             let descriptionFont = Font.with(size: floor(presentationData.fontSize.baseDisplaySize * 13.0 / 17.0), design: .regular, weight: .regular, traits: [.monospacedNumbers])
+-                            downloadingStrings = ("\(compactString) / \(dataSizeString(size, forceDecimal: true, formatting: DataSizeStringFormatting(chatPresentationData: presentationData)))", compactString, descriptionFont)
++                            var expandedString = "\(compactString) / \(dataSizeString(size, forceDecimal: true, formatting: DataSizeStringFormatting(chatPresentationData: presentationData)))"
++                            // Ayo: upload percentage while sending
++                            if isSending && AyuSettings.showUploadProgress {
++                                expandedString += " · \(Int(progress * 100.0))%"
++                            }
++                            downloadingStrings = (expandedString, compactString, descriptionFont)
+                         }
+                     default:
+                         break
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+index 463ab663..638dccf4 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+@@ -193,6 +193,7 @@ enum PeerInfoSettingsSection {
+     case emojiStatus
+     case profileColor
+     case powerSaving
++    case ayoSettings
+     case businessSetup
+     case profile
+     case premiumManagement
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+index bb413618..73e6a207 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+@@ -227,15 +227,15 @@ extension PeerInfoScreenNode {
+                 guard let strongSelf = self else {
+                     return
+                 }
+-                var maximumAvailableAccounts: Int = 3
++                var maximumAvailableAccounts: Int = 1000
+                 if accountAndPeer?.1.isPremium == true && !strongSelf.context.account.testingEnvironment {
+-                    maximumAvailableAccounts = 4
++                    maximumAvailableAccounts = 1000
+                 }
+                 var count: Int = 1
+                 for (accountContext, peer, _) in accountsAndPeers {
+                     if !accountContext.account.testingEnvironment {
+                         if peer.isPremium {
+-                            maximumAvailableAccounts = 4
++                            maximumAvailableAccounts = 1000
+                         }
+                         count += 1
+                     }
+@@ -281,6 +281,8 @@ extension PeerInfoScreenNode {
+             self.interaction.editingOpenNameColorSetup()
+         case .powerSaving:
+             push(energySavingSettingsScreen(context: self.context))
++        case .ayoSettings:
++            push(ayoSettingsController(context: self.context))
+         case .businessSetup:
+             guard let controller = self.controller, !controller.presentAccountFrozenInfoIfNeeded() else {
+                 return
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+index 8e3f9d25..2c45a21b 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+@@ -275,6 +275,10 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+         interaction.openSettings(.powerSaving)
+     }))
+     
++    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: "Ayo настройки", icon: PresentationResourcesSettings.ayoSettings, action: {
++        interaction.openSettings(.ayoSettings)
++    }))
++    
+     let languageName = presentationData.strings.primaryComponent.localizedName
+     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 4, label: .text(languageName.isEmpty ? presentationData.strings.Localization_LanguageName : languageName), text: presentationData.strings.Settings_AppLanguage, icon: PresentationResourcesSettings.language, action: {
+         interaction.openSettings(.language)
+diff --git a/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift b/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
+index dacb9983..12a00b6a 100644
+--- a/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
++++ b/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
+@@ -10,6 +10,18 @@ import LocalMediaResources
+ import LegacyMediaPickerUI
+ import MediaEditor
+ import Photos
++import AVFoundation
++
++// Ayo: keep source frame rate (up to 60) instead of always re-encoding at 30 fps
++private func ayoExportFrameRate(_ asset: AVAsset?) -> Float {
++    guard AyuSettings.unlockFrameRate, let asset, let track = asset.tracks(withMediaType: .video).first else {
++        return 30.0
++    }
++    if track.nominalFrameRate > 30.0 {
++        return min(track.nominalFrameRate, 60.0)
++    }
++    return 30.0
++}
+ 
+ private final class AVURLAssetCopyItem: MediaResourceDataFetchCopyLocalItem {
+     private let url: URL
+@@ -401,7 +413,7 @@ public func fetchVideoLibraryMediaResource(postbox: Postbox, resource: VideoLibr
+                     let updatedSize = Atomic<Int64>(value: 0)
+                     if let mediaEditorValues {
+                         let duration: Double = avAsset.duration.seconds
+-                        var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
++                        var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: ayoExportFrameRate(avAsset))
+                         configuration.useStreamingWriter = isStory ? useStreamingStoryVideoWriter : useStreamingChatVideoWriter
+                         let videoExport = MediaEditorVideoExport(postbox: postbox, subject: .video(asset: avAsset, isStory: isStory), configuration: configuration, outputPath: tempFile.path)
+                         let streamingHeaderEnd = Atomic<Int64>(value: 0)
+@@ -601,7 +613,7 @@ public func fetchLocalFileVideoMediaResource(postbox: Postbox, resource: LocalFi
+                 return EmptyDisposable
+             }
+             
+-            var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
++            var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: ayoExportFrameRate(avAsset))
+             configuration.useStreamingWriter = isStory ? useStreamingStoryVideoWriter : useStreamingChatVideoWriter
+             let videoExport = MediaEditorVideoExport(postbox: postbox, subject: subject, configuration: configuration, outputPath: tempFile.path)
+             let streamingHeaderEnd = Atomic<Int64>(value: 0)
+diff --git a/submodules/TelegramUI/Sources/AccountContext.swift b/submodules/TelegramUI/Sources/AccountContext.swift
+index 080872b2..e02011ea 100644
+--- a/submodules/TelegramUI/Sources/AccountContext.swift
++++ b/submodules/TelegramUI/Sources/AccountContext.swift
+@@ -116,6 +116,24 @@ private final class DeviceSpecificContactImportContexts {
+     }
+ }
+ 
++private func ayoScheduleAutoCacheCleanup(engine: TelegramEngine, accountId: AccountRecordId) {
++    let interval = AyuSettings.autoCacheCleanInterval
++    if interval == 0 {
++        return
++    }
++    let key = "ayo.lastCacheClean.\(accountId.int64)"
++    let now = Int(Date().timeIntervalSince1970)
++    let last = UserDefaults.standard.integer(forKey: key)
++    if interval > 0 && now - last < interval {
++        return
++    }
++    Queue.mainQueue().after(15.0, {
++        UserDefaults.standard.set(now, forKey: key)
++        // Stickers and avatars are kept so the UI does not flicker while they reload.
++        let _ = engine.resources.clearStorage(peerId: nil, categories: [.photos, .videos, .files, .music, .misc, .stories], includeMessages: [], excludeMessages: []).startStandalone()
++    })
++}
++
+ public final class AccountContextImpl: AccountContext {
+     public let sharedContextImpl: SharedAccountContextImpl
+     public var sharedContext: SharedAccountContext {
+@@ -680,6 +698,11 @@ public final class AccountContextImpl: AccountContext {
+                 return try await requestPasscodeAuthentication(context: self, scope: .resource(namespace: request.namespace), lifetime: request.lifetime, biometricReason: self.sharedContext.currentPresentationData.with { $0 }.strings.Wallet_AuthenticationReason, authenticateBiometrics: authenticateBiometrics)
+             }
+         }
++        
++        // Ayo: optional automatic media cache cleanup
++        if sharedContext.applicationBindings.isMainApp && !temp {
++            ayoScheduleAutoCacheCleanup(engine: self.engine, accountId: account.id)
++        }
+     }
+ 
+     deinit {
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index cf304286..eea869b7 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -68,6 +68,23 @@ private func isTonTransferUrl(_ url: URL) -> Bool {
+ 
+ private var testIsLaunched = false
+ 
++// Ayo: BGTaskScheduler.register() throws (crashing the app) if the identifier is not
++// listed in Info.plist. Re-signing tools may change the bundle id, so check first.
++func ayoIsBackgroundTaskPermitted(_ identifier: String) -> Bool {
++    guard let permitted = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] else {
++        return false
++    }
++    for item in permitted {
++        if item == identifier {
++            return true
++        }
++        if item.hasSuffix("*") && identifier.hasPrefix(String(item.dropLast())) {
++            return true
++        }
++    }
++    return false
++}
++
+ private func isKeyboardWindow(window: NSObject) -> Bool {
+     let typeName = NSStringFromClass(type(of: window))
+     if #available(iOS 9.0, *) {
+@@ -565,10 +582,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let appGroupName = "group.\(baseAppBundleId)"
+-        try! PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .mainApp, biometricKeychainService: walletBiometricKeychainService), privateAccessGroup: {
++        // Ayo: try? instead of try! so a missing app group entitlement (sideload) does not crash
++        try? PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .mainApp, biometricKeychainService: walletBiometricKeychainService), privateAccessGroup: {
+             BuildConfig.keychainAccessGroup(baseAppBundleId: baseAppBundleId)
+         })
+-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
++        // Ayo: re-signed (sideloaded) builds usually lose the app group entitlement,
++        // so fall back to the app's own Library directory instead of failing to launch.
++        var maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
++        if let url = maybeAppGroupUrl, !FileManager.default.isWritableFile(atPath: url.path) {
++            maybeAppGroupUrl = nil
++        }
++        if maybeAppGroupUrl == nil {
++            maybeAppGroupUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
++        }
+         
+         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
+         self.buildConfig = buildConfig
+@@ -1630,7 +1656,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         
+         self.maybeCheckForUpdates()
+         
+-        if #available(iOS 13.0, *) {
++        if #available(iOS 13.0, *), ayoIsBackgroundTaskPermitted("\(baseAppBundleId).cleanup") {
+             let cleanupTaskId = "\(baseAppBundleId).cleanup"
+             
+             BGTaskScheduler.shared.register(forTaskWithIdentifier: cleanupTaskId, using: DispatchQueue.main) { task in
+@@ -3280,6 +3306,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+     
+     @available(iOS 10.0, *)
+     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
++        // Ayo: local notifications about deleted/edited messages are shown in foreground too
++        if notification.request.content.userInfo["ayo"] != nil {
++            completionHandler([.alert, .sound])
++            return
++        }
+         if notification.request.content.userInfo[CallUnlockVideoNotificationState.userInfoKey] != nil {
+             completionHandler([])
+             return
+diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
+index f32b3c16..4404006b 100644
+--- a/submodules/TelegramUI/Sources/ChatController.swift
++++ b/submodules/TelegramUI/Sources/ChatController.swift
+@@ -7937,7 +7937,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+                     // visible in the foreground, so a recording started behind a covering screen or while
+                     // backgrounded is still reported once the chat comes into view.
+                     if let strongSelf = self, strongSelf.isApplicationInForegroundValue, strongSelf.traceVisibility() {
+-                        let _ = strongSelf.context.engine.messages.addSecretChatMessageScreenshot(peerId: peerId).startStandalone()
++                        if !AyuSettings.dontNotifyScreenshots {
++                            let _ = strongSelf.context.engine.messages.addSecretChatMessageScreenshot(peerId: peerId).startStandalone()
++                        }
+                         return true
+                     } else {
+                         return false
+@@ -9108,7 +9110,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+     }
+             
+     func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone: Bool = false) -> [EnqueueMessage] {
+-        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting
++        // Ayo: optional silent-by-default for the normal send button (long-press "send with sound" still overrides)
++        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || (AyuSettings.sendSilentlyByDefault && self.presentationInterfaceState.chatLocation.peerId?.namespace != Namespaces.Peer.SecretChat)
+         return transformEnqueueMessages(messages, silentPosting: silentPosting, postpone: postpone)
+     }
+     
+diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+index e9c504df..0f48ba84 100644
+--- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
++++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@ -1356,6 +1356,34 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+             }
+         }
+         
++        // Ayo: show previous versions of an edited message
++        let ayoEditHistory = AyuMessageHistory.shared.edits(for: message.id)
++        if !ayoEditHistory.isEmpty {
++            actions.append(.action(ContextMenuActionItem(text: "История правок", icon: { theme in
++                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.actionSheet.primaryTextColor)
++            }, action: { c, _ in
++                c?.dismiss(completion: {
++                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++                    let formatter = DateFormatter()
++                    formatter.dateStyle = .short
++                    formatter.timeStyle = .short
++                    var parts: [String] = []
++                    for entry in ayoEditHistory {
++                        parts.append("\(formatter.string(from: Date(timeIntervalSince1970: Double(entry.date)))):\n\(entry.text)")
++                    }
++                    parts.append("Сейчас:\n\(message.text)")
++                    controllerInteraction.presentController(textAlertController(
++                        context: context,
++                        title: "История правок",
++                        text: parts.joined(separator: "\n\n"),
++                        actions: [
++                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
++                        ]
++                    ), nil)
++                })
++            })))
++        }
++        
+         let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
+         if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage) || diceEmoji != nil {
+             if !isExpired {
+diff --git a/submodules/TelegramUI/Sources/SharedAccountContext.swift b/submodules/TelegramUI/Sources/SharedAccountContext.swift
+index be2822e7..14193009 100644
+--- a/submodules/TelegramUI/Sources/SharedAccountContext.swift
++++ b/submodules/TelegramUI/Sources/SharedAccountContext.swift
+@@ -328,6 +328,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+     private var webProxyCarrierHost: WebProxyCarrierWindowHost?
+     
+     init(mainWindow: Window1?, sharedContainerPath: String, basePath: String, encryptionParameters: EngineValueBoxEncryptionParameters, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, notificationController: NotificationContainerController?, applicationBindings: TelegramApplicationBindings, initialPresentationDataAndSettings: InitialPresentationDataAndSettings, networkArguments: NetworkInitializationArguments, hasInAppPurchases: Bool, rootPath: String, legacyBasePath: String?, apsNotificationToken: Signal<Data?, NoError>, voipNotificationToken: Signal<Data?, NoError>, firebaseSecretStream: Signal<[String: String], NoError>, setNotificationCall: @escaping (PresentationCall?) -> Void, navigateToChat: @escaping (AccountRecordId, EnginePeer.Id, EngineMessage.Id?, Bool) -> Void, displayUpgradeProgress: @escaping (Float?) -> Void = { _ in }, appDelegate: AppDelegate?, testingEnvironment: Bool = false) {
++        AyoHooks.makeSettingsController = { context in
++            return ayoSettingsController(context: context)
++        }
++        
+         assert(Queue.mainQueue().isCurrent())
+ 
+         precondition(!testHasInstance)
+diff --git a/submodules/TelegramUI/Sources/SharedWakeupManager.swift b/submodules/TelegramUI/Sources/SharedWakeupManager.swift
+index b7c69492..448801ac 100644
+--- a/submodules/TelegramUI/Sources/SharedWakeupManager.swift
++++ b/submodules/TelegramUI/Sources/SharedWakeupManager.swift
+@@ -535,6 +535,9 @@ public final class SharedWakeupManager {
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let uploadTaskId = "\(baseAppBundleId).upload.message\(self.nextBackgroundProcessingTaskId)"
++        guard ayoIsBackgroundTaskPermitted(uploadTaskId) else {
++            return
++        }
+         self.nextBackgroundProcessingTaskId += 1
+         self.backgroundProcessingTaskProgressByKey = [:]
+         self.backgroundProcessingTaskLaunched = false
+@@ -711,6 +714,9 @@ public final class SharedWakeupManager {
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let uploadTaskId = "\(baseAppBundleId).upload.story\(self.nextBackgroundStoryProcessingTaskId)"
++        guard ayoIsBackgroundTaskPermitted(uploadTaskId) else {
++            return
++        }
+         self.nextBackgroundStoryProcessingTaskId += 1
+         self.backgroundStoryProcessingTaskProgressByKey = [:]
+         self.backgroundStoryProcessingTaskLaunched = false
+diff --git a/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m b/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
+index 3191bf1b..f47aced3 100644
+--- a/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
++++ b/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
+@@ -296,7 +296,19 @@ NSObject * _Nullable makeColorMatrixFilter() {
+ 
+ static const void *layerDisableScreenshotsKey = &layerDisableScreenshotsKey;
+ 
++// Ayo: same key as AyuSettings.allowScreenshots (TelegramCore), default on.
++static bool ayoAllowScreenshots(void) {
++    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
++    if ([defaults objectForKey:@"ayo.allowScreenshots"] == nil) {
++        return true;
++    }
++    return [defaults boolForKey:@"ayo.allowScreenshots"];
++}
++
+ void setLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshots) {
++    if (disableScreenshots && ayoAllowScreenshots()) {
++        disableScreenshots = false;
++    }
+     static UITextField *textField = nil;
+     static UIView *secureView = nil;
+     static dispatch_once_t onceToken;

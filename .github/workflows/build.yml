@@ -58,12 +58,22 @@ jobs:
         run: |
           set -x
           cd /Users/Shared/telegram-ios
+          echo "Installed Xcodes:"; ls /Applications | grep -i xcode || true
           XCODE_VERSION=$(python3 -c 'import json;print(json.load(open("versions.json"))["xcode"])')
+          MAJOR="${XCODE_VERSION%%.*}"
+          pick=""
           if [ -d "/Applications/Xcode_$XCODE_VERSION.app" ]; then
-            sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app/Contents/Developer"
+            pick="/Applications/Xcode_$XCODE_VERSION.app"
           else
-            echo "Xcode $XCODE_VERSION not found, using default"
-            ls /Applications | grep -i xcode
+            # Fall back to the newest Xcode of the required major version, else the newest Xcode overall.
+            pick=$(ls -d /Applications/Xcode_${MAJOR}*.app 2>/dev/null | sort -V | tail -1)
+            if [ -z "$pick" ]; then
+              pick=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+            fi
+            echo "Xcode $XCODE_VERSION not found; falling back to $pick"
+          fi
+          if [ -n "$pick" ]; then
+            sudo xcode-select -s "$pick/Contents/Developer"
           fi
           xcodebuild -version
 

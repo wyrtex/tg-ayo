@@ -49,6 +49,11 @@ jobs:
           set -ex
           python3 "$GITHUB_WORKSPACE/branding/apply_branding.py" /Users/Shared/telegram-ios "$APP_NAME"
 
+      - name: Refresh fake provisioning profiles
+        run: |
+          set -ex
+          python3 "$GITHUB_WORKSPACE/branding/refresh_profiles.py" /Users/Shared/telegram-ios
+
       - name: Select Xcode
         run: |
           set -x

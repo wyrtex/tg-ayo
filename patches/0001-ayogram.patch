@@ -2988,7 +2988,7 @@ index c4accd876..f8b0bcbd4 100644
  
      deinit {
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index 109d03ab5..00190d62f 100644
+index 109d03ab5..7c4be0cbe 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
 @@ -70,6 +70,23 @@ private func isTonTransferUrl(_ url: URL) -> Bool {
@@ -3046,13 +3046,14 @@ index 109d03ab5..00190d62f 100644
              let cleanupTaskId = "\(baseAppBundleId).cleanup"
              
              BGTaskScheduler.shared.register(forTaskWithIdentifier: cleanupTaskId, using: DispatchQueue.main) { task in
-@@ -3190,6 +3216,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -3190,6 +3216,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      
      @available(iOS 10.0, *)
      func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-+        // Ayo: local notifications about deleted/edited messages are shown in foreground too
++        // Ayo: local notifications about deleted/edited messages are shown in foreground too.
++        // .banner + .list replace .alert, which was deprecated in iOS 14 (Display builds -warnings-as-errors).
 +        if notification.request.content.userInfo["ayo"] != nil {
-+            completionHandler([.alert, .sound])
++            completionHandler([.banner, .list, .sound])
 +            return
 +        }
          let _ = (accountIdFromNotification(notification, sharedContext: self.sharedContextPromise.get())

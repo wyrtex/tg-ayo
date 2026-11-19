@@ -605,54 +605,63 @@ index 914fb6d8f..eef4b4155 100644
              subscriber.putNext(.still)
 diff --git a/submodules/SettingsUI/Sources/AyoAppearanceController.swift b/submodules/SettingsUI/Sources/AyoAppearanceController.swift
 new file mode 100644
-index 000000000..9a6c940ab
+index 000000000..764a24cd4
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/AyoAppearanceController.swift
-@@ -0,0 +1,316 @@
+@@ -0,0 +1,344 @@
 +import Foundation
 +import UIKit
 +import Display
 +import SwiftSignalKit
 +import TelegramCore
 +import TelegramPresentationData
++import TelegramUIPreferences
 +import ItemListUI
 +import PresentationDataUtils
 +import AccountContext
 +
 +private final class AyoAppearanceArguments {
++    let context: AccountContext
 +    let select: (String) -> Void
-+    init(select: @escaping (String) -> Void) {
++    init(context: AccountContext, select: @escaping (String) -> Void) {
++        self.context = context
 +        self.select = select
 +    }
 +}
 +
 +private enum AyoAppearanceEntry: ItemListNodeEntry {
++    case preview(id: Int32, section: Int32)
 +    case header(id: Int32, section: Int32, text: String)
 +    case option(id: Int32, section: Int32, key: String, title: String, checked: Bool)
++    case fontOption(id: Int32, section: Int32, key: String, fontName: String, title: String, checked: Bool)
 +    case color(id: Int32, section: Int32, key: String, title: String, color: UInt32?)
 +    case action(id: Int32, section: Int32, key: String, title: String, destructive: Bool)
 +    case footer(id: Int32, section: Int32, text: String)
 +
 +    var section: ItemListSectionId {
 +        switch self {
-+        case let .header(_, section, _), let .option(_, section, _, _, _), let .color(_, section, _, _, _), let .action(_, section, _, _, _), let .footer(_, section, _):
++        case let .preview(_, section), let .header(_, section, _), let .option(_, section, _, _, _), let .fontOption(_, section, _, _, _, _), let .color(_, section, _, _, _), let .action(_, section, _, _, _), let .footer(_, section, _):
 +            return section
 +        }
 +    }
 +
 +    var stableId: Int32 {
 +        switch self {
-+        case let .header(id, _, _), let .option(id, _, _, _, _), let .color(id, _, _, _, _), let .action(id, _, _, _, _), let .footer(id, _, _):
++        case let .preview(id, _), let .header(id, _, _), let .option(id, _, _, _, _), let .fontOption(id, _, _, _, _, _), let .color(id, _, _, _, _), let .action(id, _, _, _, _), let .footer(id, _, _):
 +            return id
 +        }
 +    }
 +
 +    static func ==(lhs: AyoAppearanceEntry, rhs: AyoAppearanceEntry) -> Bool {
 +        switch (lhs, rhs) {
++        case let (.preview(lId, lSection), .preview(rId, rSection)):
++            return lId == rId && lSection == rSection
 +        case let (.header(lId, lSection, lText), .header(rId, rSection, rText)):
 +            return lId == rId && lSection == rSection && lText == rText
 +        case let (.option(lId, lSection, lKey, lTitle, lChecked), .option(rId, rSection, rKey, rTitle, rChecked)):
 +            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lChecked == rChecked
++        case let (.fontOption(lId, lSection, lKey, lFont, lTitle, lChecked), .fontOption(rId, rSection, rKey, rFont, rTitle, rChecked)):
++            return lId == rId && lSection == rSection && lKey == rKey && lFont == rFont && lTitle == rTitle && lChecked == rChecked
 +        case let (.color(lId, lSection, lKey, lTitle, lColor), .color(rId, rSection, rKey, rTitle, rColor)):
 +            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lColor == rColor
 +        case let (.action(lId, lSection, lKey, lTitle, lDestructive), .action(rId, rSection, rKey, rTitle, rDestructive)):
@@ -671,10 +680,21 @@ index 000000000..9a6c940ab
 +    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
 +        let arguments = arguments as! AyoAppearanceArguments
 +        switch self {
++        case let .preview(_, section):
++            let pd = arguments.context.sharedContext.currentPresentationData.with { $0 }
++            let messageItems: [ChatPreviewMessageItem] = [
++                ChatPreviewMessageItem(outgoing: false, reply: nil, text: "Так выглядят входящие сообщения", nameColor: .preset(.blue), backgroundEmojiId: nil),
++                ChatPreviewMessageItem(outgoing: true, reply: nil, text: "А так — мои. Настрой цвета и форму ниже.", nameColor: .preset(.blue), backgroundEmojiId: nil)
++            ]
++            return ThemeSettingsChatPreviewItem(context: arguments.context, systemStyle: .glass, theme: pd.theme, componentTheme: pd.theme, strings: pd.strings, sectionId: section, fontSize: pd.chatFontSize, chatBubbleCorners: pd.chatBubbleCorners, wallpaper: pd.chatWallpaper, dateTimeFormat: pd.dateTimeFormat, nameDisplayOrder: pd.nameDisplayOrder, messageItems: messageItems)
 +        case let .header(_, section, text):
 +            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: section)
 +        case let .option(_, section, key, title, checked):
 +            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: title, style: .left, checked: checked, zeroSeparatorInsets: false, sectionId: section, action: {
++                arguments.select(key)
++            })
++        case let .fontOption(_, section, key, fontName, title, checked):
++            return AyoFontCheckItem(presentationData: presentationData, fontName: fontName, title: title, checked: checked, zeroSeparatorInsets: false, sectionId: section, action: {
 +                arguments.select(key)
 +            })
 +        case let .color(_, section, key, title, color):
@@ -732,18 +752,21 @@ index 000000000..9a6c940ab
 +private func ayoAppearanceEntries() -> [AyoAppearanceEntry] {
 +    var entries: [AyoAppearanceEntry] = []
 +
-+    entries.append(.header(id: 0, section: 0, text: "ШРИФТ ПРИЛОЖЕНИЯ"))
++    entries.append(.header(id: 0, section: 0, text: "ПРЕДПРОСМОТР"))
++    entries.append(.preview(id: 1, section: 0))
++
++    entries.append(.header(id: 10, section: 1, text: "ШРИФТ ПРИЛОЖЕНИЯ"))
 +    let currentFont = AyuSettings.appFont
 +    for (index, option) in ayoFontOptions.enumerated() {
-+        entries.append(.option(id: Int32(1 + index), section: 0, key: "font:\(option.0)", title: option.1, checked: currentFont == option.0))
++        entries.append(.fontOption(id: Int32(11 + index), section: 1, key: "font:\(option.0)", fontName: option.0, title: option.1, checked: currentFont == option.0))
 +    }
 +
-+    entries.append(.header(id: 100, section: 1, text: "ФОРМА СООБЩЕНИЙ"))
++    entries.append(.header(id: 100, section: 2, text: "ФОРМА СООБЩЕНИЙ"))
 +    let currentShape = AyuSettings.bubbleShape
 +    for (index, option) in ayoShapeOptions.enumerated() {
-+        entries.append(.option(id: Int32(101 + index), section: 1, key: "shape:\(option.0)", title: option.1, checked: currentShape == option.0))
++        entries.append(.option(id: Int32(101 + index), section: 2, key: "shape:\(option.0)", title: option.1, checked: currentShape == option.0))
 +    }
-+    entries.append(.footer(id: 120, section: 1, text: "Радиус углов настраивается в «Оформление» → «Углы блоков с сообщениями»."))
++    entries.append(.footer(id: 120, section: 2, text: "Радиус углов настраивается в «Оформление» → «Углы блоков с сообщениями»."))
 +
 +    func appendBubbleSection(baseId: Int32, section: Int32, title: String, prefix: String, colors: [UInt32], textColor: UInt32) {
 +        entries.append(.header(id: baseId, section: section, text: title))
@@ -758,11 +781,11 @@ index 000000000..9a6c940ab
 +            entries.append(.action(id: baseId + 21, section: section, key: "\(prefix)TextReset", title: "Цвет текста: автоматически", destructive: false))
 +        }
 +    }
-+    appendBubbleSection(baseId: 200, section: 2, title: "МОИ СООБЩЕНИЯ", prefix: "out", colors: AyuSettings.outgoingBubbleColors, textColor: AyuSettings.outgoingTextColor)
-+    appendBubbleSection(baseId: 300, section: 3, title: "СООБЩЕНИЯ СОБЕСЕДНИКОВ", prefix: "in", colors: AyuSettings.incomingBubbleColors, textColor: AyuSettings.incomingTextColor)
++    appendBubbleSection(baseId: 200, section: 3, title: "МОИ СООБЩЕНИЯ", prefix: "out", colors: AyuSettings.outgoingBubbleColors, textColor: AyuSettings.outgoingTextColor)
++    appendBubbleSection(baseId: 300, section: 4, title: "СООБЩЕНИЯ СОБЕСЕДНИКОВ", prefix: "in", colors: AyuSettings.incomingBubbleColors, textColor: AyuSettings.incomingTextColor)
 +
-+    entries.append(.action(id: 400, section: 4, key: "reset", title: "Сбросить оформление Ayo", destructive: true))
-+    entries.append(.footer(id: 401, section: 4, text: "Изменения применяются после перезапуска AyoGram: смахните приложение в переключателе и откройте снова. Автоматический цвет текста подбирается под яркость пузыря."))
++    entries.append(.action(id: 400, section: 5, key: "reset", title: "Сбросить оформление Ayo", destructive: true))
++    entries.append(.footer(id: 401, section: 5, text: "Изменения применяются сразу. Автоматический цвет текста подбирается под яркость пузыря."))
 +
 +    return entries
 +}
@@ -803,9 +826,14 @@ index 000000000..9a6c940ab
 +    var counter = 0
 +    weak var currentController: ViewController?
 +
++    func applyLive() {
++        let _ = updatePresentationThemeSettingsInteractively(accountManager: context.sharedContext.accountManager, { $0 }).startStandalone()
++    }
++
 +    func reload() {
 +        counter += 1
 +        refresh.set(counter)
++        applyLive()
 +    }
 +
 +    func pickColor(initial: UInt32?, completion: @escaping (UInt32) -> Void) {
@@ -843,7 +871,7 @@ index 000000000..9a6c940ab
 +        return prefix == "out" ? AyuSettings.outgoingBubbleColors : AyuSettings.incomingBubbleColors
 +    }
 +
-+    let arguments = AyoAppearanceArguments(select: { key in
++    let arguments = AyoAppearanceArguments(context: context, select: { key in
 +        let parts = key.split(separator: ":", maxSplits: 1).map(String.init)
 +        let name = parts[0]
 +        let value = parts.count > 1 ? parts[1] : ""
@@ -924,6 +952,310 @@ index 000000000..9a6c940ab
 +    let controller = ItemListController(context: context, state: signal)
 +    currentController = controller
 +    return controller
++}
+diff --git a/submodules/SettingsUI/Sources/AyoFontCheckItem.swift b/submodules/SettingsUI/Sources/AyoFontCheckItem.swift
+new file mode 100644
+index 000000000..1e9a138ae
+--- /dev/null
++++ b/submodules/SettingsUI/Sources/AyoFontCheckItem.swift
+@@ -0,0 +1,298 @@
++import Foundation
++import UIKit
++import Display
++import AsyncDisplayKit
++import SwiftSignalKit
++import TelegramPresentationData
++import ItemListUI
++
++/// Ayo: resolves a font option key (as used in the appearance screen) to a concrete UIFont.
++func ayoResolveFont(_ name: String, size: CGFloat) -> UIFont {
++    switch name {
++    case "":
++        return Font.regular(size)
++    case "rounded":
++        if #available(iOS 13.0, *), let descriptor = UIFont.systemFont(ofSize: size).fontDescriptor.withDesign(.rounded) {
++            return UIFont(descriptor: descriptor, size: size)
++        }
++        return Font.regular(size)
++    case "serif":
++        if #available(iOS 13.0, *), let descriptor = UIFont.systemFont(ofSize: size).fontDescriptor.withDesign(.serif) {
++            return UIFont(descriptor: descriptor, size: size)
++        }
++        return Font.regular(size)
++    case "mono":
++        return UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
++    default:
++        return UIFont(name: name, size: size) ?? Font.regular(size)
++    }
++}
++
++/// Ayo: a checkbox-style list row whose title is rendered in the font it represents.
++final class AyoFontCheckItem: ListViewItem, ItemListItem {
++    let presentationData: ItemListPresentationData
++    let fontName: String
++    let title: String
++    let checked: Bool
++    let zeroSeparatorInsets: Bool
++    let sectionId: ItemListSectionId
++    let action: () -> Void
++
++    init(presentationData: ItemListPresentationData, fontName: String, title: String, checked: Bool, zeroSeparatorInsets: Bool, sectionId: ItemListSectionId, action: @escaping () -> Void) {
++        self.presentationData = presentationData
++        self.fontName = fontName
++        self.title = title
++        self.checked = checked
++        self.zeroSeparatorInsets = zeroSeparatorInsets
++        self.sectionId = sectionId
++        self.action = action
++    }
++
++    func nodeConfiguredForParams(async: @escaping (@escaping () -> Void) -> Void, params: ListViewItemLayoutParams, synchronousLoads: Bool, neighbors: ListViewItemNeighbors, completion: @escaping (ListViewItemNode, @escaping () -> (Signal<Void, NoError>?, (ListViewItemApply) -> Void)) -> Void) {
++        async {
++            let node = AyoFontCheckItemNode()
++            let (layout, apply) = node.asyncLayout()(self, params, itemListNeighbors(item: self, topFacet: neighbors.previous?.base(ItemListNeighborFacet.self), bottomFacet: neighbors.next?.base(ItemListNeighborFacet.self)))
++
++            node.contentSize = layout.contentSize
++            node.insets = layout.insets
++
++            Queue.mainQueue().async {
++                completion(node, {
++                    return (nil, { _ in apply() })
++                })
++            }
++        }
++    }
++
++    func updateNode(async: @escaping (@escaping () -> Void) -> Void, node: @escaping () -> ListViewItemNode, params: ListViewItemLayoutParams, neighbors: ListViewItemNeighbors, animation: ListViewItemUpdateAnimation, completion: @escaping (ListViewItemNodeLayout, @escaping (ListViewItemApply) -> Void) -> Void) {
++        Queue.mainQueue().async {
++            if let nodeValue = node() as? AyoFontCheckItemNode {
++                let makeLayout = nodeValue.asyncLayout()
++                async {
++                    let (layout, apply) = makeLayout(self, params, itemListNeighbors(item: self, topFacet: neighbors.previous?.base(ItemListNeighborFacet.self), bottomFacet: neighbors.next?.base(ItemListNeighborFacet.self)))
++                    Queue.mainQueue().async {
++                        completion(layout, { _ in
++                            apply()
++                        })
++                    }
++                }
++            }
++        }
++    }
++
++    var selectable: Bool = true
++
++    func selected(listView: ListView) {
++        listView.clearHighlightAnimated(true)
++        self.action()
++    }
++}
++
++final class AyoFontCheckItemNode: ItemListRevealOptionsItemNode {
++    private let backgroundNode: ASDisplayNode
++    private let topStripeNode: ASDisplayNode
++    private let bottomStripeNode: ASDisplayNode
++    private let highlightedBackgroundNode: ASDisplayNode
++    private let maskNode: ASImageNode
++
++    private let activateArea: AccessibilityAreaNode
++
++    private let contentContainerNode: ASDisplayNode
++    private let iconNode: ASImageNode
++    private let titleNode: TextNode
++
++    private var item: AyoFontCheckItem?
++    private var isHighlighted = false
++
++    override var controlsContainer: ASDisplayNode {
++        return self.contentContainerNode
++    }
++
++    init() {
++        self.backgroundNode = ASDisplayNode()
++        self.backgroundNode.isLayerBacked = true
++
++        self.topStripeNode = ASDisplayNode()
++        self.topStripeNode.isLayerBacked = true
++
++        self.bottomStripeNode = ASDisplayNode()
++        self.bottomStripeNode.isLayerBacked = true
++
++        self.maskNode = ASImageNode()
++        self.maskNode.isUserInteractionEnabled = false
++
++        self.contentContainerNode = ASDisplayNode()
++
++        self.iconNode = ASImageNode()
++        self.iconNode.isLayerBacked = true
++        self.iconNode.displayWithoutProcessing = true
++        self.iconNode.displaysAsynchronously = false
++
++        self.titleNode = TextNode()
++        self.titleNode.isUserInteractionEnabled = false
++        self.titleNode.contentMode = .left
++        self.titleNode.contentsScale = UIScreen.main.scale
++
++        self.highlightedBackgroundNode = ASDisplayNode()
++        self.highlightedBackgroundNode.isLayerBacked = true
++
++        self.activateArea = AccessibilityAreaNode()
++
++        super.init(layerBacked: false, rotated: false, seeThrough: false)
++
++        self.addSubnode(self.contentContainerNode)
++        self.contentContainerNode.addSubnode(self.iconNode)
++        self.contentContainerNode.addSubnode(self.titleNode)
++        self.addSubnode(self.activateArea)
++
++        self.activateArea.activate = { [weak self] in
++            self?.item?.action()
++            return true
++        }
++    }
++
++    func asyncLayout() -> (_ item: AyoFontCheckItem, _ params: ListViewItemLayoutParams, _ neighbors: ItemListNeighbors) -> (ListViewItemNodeLayout, () -> Void) {
++        let makeTitleLayout = TextNode.asyncLayout(self.titleNode)
++        let currentItem = self.item
++
++        return { [weak self] item, params, neighbors in
++            let leftInset: CGFloat = params.leftInset + 62.0
++            let trailingInset: CGFloat = max(28.0, 28.0 + params.rightInset - params.leftInset)
++
++            let baseFontSize = item.presentationData.fontSize.itemListBaseFontSize
++            let titleFont = ayoResolveFont(item.fontName, size: baseFontSize)
++            let titleColor = item.presentationData.theme.list.itemPrimaryTextColor
++
++            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: titleColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - trailingInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
++
++            let separatorHeight = UIScreenPixel
++            let separatorRightInset: CGFloat = 16.0
++            let verticalInset: CGFloat = 15.0
++
++            let insets = itemListNeighborsGroupedInsets(neighbors, params)
++            let contentSize = CGSize(width: params.width, height: max(44.0, titleLayout.size.height + verticalInset * 2.0))
++            let layout = ListViewItemNodeLayout(contentSize: contentSize, insets: insets)
++
++            var updateCheckImage: UIImage?
++            var updatedTheme: PresentationTheme?
++
++            if currentItem?.presentationData.theme !== item.presentationData.theme {
++                updatedTheme = item.presentationData.theme
++                updateCheckImage = PresentationResourcesItemList.checkIconImage(item.presentationData.theme)
++            }
++
++            return (layout, { [weak self] in
++                if let strongSelf = self {
++                    strongSelf.item = item
++
++                    strongSelf.contentContainerNode.frame = CGRect(origin: CGPoint(x: strongSelf.contentContainerNode.frame.minX, y: 0.0), size: CGSize(width: params.width, height: layout.contentSize.height))
++
++                    strongSelf.activateArea.accessibilityLabel = item.title
++                    strongSelf.activateArea.accessibilityValue = item.checked ? "Selected" : ""
++                    strongSelf.activateArea.frame = CGRect(origin: CGPoint(x: params.leftInset, y: 0.0), size: CGSize(width: params.width - params.leftInset - params.rightInset, height: layout.contentSize.height))
++
++                    if let updateCheckImage = updateCheckImage {
++                        strongSelf.iconNode.image = updateCheckImage
++                    }
++
++                    if let _ = updatedTheme {
++                        strongSelf.topStripeNode.backgroundColor = item.presentationData.theme.list.itemBlocksSeparatorColor
++                        strongSelf.bottomStripeNode.backgroundColor = item.presentationData.theme.list.itemBlocksSeparatorColor
++                        strongSelf.backgroundNode.backgroundColor = item.presentationData.theme.list.itemBlocksBackgroundColor
++                        strongSelf.highlightedBackgroundNode.backgroundColor = item.presentationData.theme.list.itemHighlightedBackgroundColor
++                    }
++
++                    let _ = titleApply()
++
++                    if let image = strongSelf.iconNode.image {
++                        strongSelf.iconNode.frame = CGRect(origin: CGPoint(x: params.leftInset + floor((leftInset - params.leftInset - image.size.width) / 2.0), y: floor((contentSize.height - image.size.height) / 2.0)), size: image.size)
++                    }
++                    strongSelf.iconNode.isHidden = !item.checked
++
++                    if strongSelf.backgroundNode.supernode == nil {
++                        strongSelf.insertSubnode(strongSelf.backgroundNode, at: 0)
++                    }
++                    if strongSelf.topStripeNode.supernode == nil {
++                        strongSelf.insertSubnode(strongSelf.topStripeNode, at: 1)
++                    }
++                    if strongSelf.bottomStripeNode.supernode == nil {
++                        strongSelf.insertSubnode(strongSelf.bottomStripeNode, at: 2)
++                    }
++                    if strongSelf.maskNode.supernode == nil {
++                        strongSelf.insertSubnode(strongSelf.maskNode, aboveSubnode: strongSelf.contentContainerNode)
++                    }
++                    let hasCorners = itemListHasRoundedBlockLayout(params)
++                    var hasTopCorners = false
++                    var hasBottomCorners = false
++                    let topStripeIsHidden: Bool
++                    switch neighbors.top {
++                        case .sameSection(false):
++                            topStripeIsHidden = true
++                        default:
++                            hasTopCorners = true
++                            topStripeIsHidden = hasCorners
++                    }
++                    let bottomStripeInset: CGFloat
++                    let bottomStripeIsHidden: Bool
++                    if item.zeroSeparatorInsets {
++                        bottomStripeInset = 0.0
++                        bottomStripeIsHidden = false
++                    } else {
++                        switch neighbors.bottom {
++                            case .sameSection(false):
++                                bottomStripeInset = leftInset
++                                bottomStripeIsHidden = false
++                            default:
++                                bottomStripeInset = 0.0
++                                hasBottomCorners = true
++                                bottomStripeIsHidden = hasCorners
++                        }
++                    }
++                    strongSelf.updateRevealOptionsSeparatorNodes(top: strongSelf.topStripeNode, bottom: strongSelf.bottomStripeNode, topIsHidden: topStripeIsHidden, bottomIsHidden: bottomStripeIsHidden, topHiddenByPreviousRevealOptions: neighbors.topHasActiveRevealOptions, bottomHiddenByNextRevealOptions: neighbors.bottomHasActiveRevealOptions)
++
++                    strongSelf.maskNode.image = hasCorners ? PresentationResourcesItemList.cornersImage(item.presentationData.theme, top: hasTopCorners, bottom: hasBottomCorners, glass: true) : nil
++
++                    strongSelf.backgroundNode.frame = CGRect(origin: CGPoint(x: 0.0, y: -min(insets.top, separatorHeight)), size: CGSize(width: params.width, height: contentSize.height + min(insets.top, separatorHeight) + min(insets.bottom, separatorHeight)))
++                    strongSelf.maskNode.frame = strongSelf.backgroundNode.frame.inset(by: UIEdgeInsets(top: 0.0, left: params.leftInset, bottom: 0.0, right: params.rightInset))
++                    strongSelf.topStripeNode.frame = CGRect(origin: CGPoint(x: 0.0, y: -min(insets.top, separatorHeight)), size: CGSize(width: params.width, height: separatorHeight))
++                    strongSelf.bottomStripeNode.frame = CGRect(origin: CGPoint(x: bottomStripeInset, y: contentSize.height - separatorHeight), size: CGSize(width: params.width - params.rightInset - bottomStripeInset - separatorRightInset, height: separatorHeight))
++
++                    strongSelf.titleNode.frame = CGRect(origin: CGPoint(x: leftInset, y: floor((contentSize.height - titleLayout.size.height) / 2.0)), size: titleLayout.size)
++
++                    strongSelf.updateRevealOptionsHighlightedBackgroundFrame(strongSelf.highlightedBackgroundNode, frame: CGRect(origin: CGPoint(x: 0.0, y: -UIScreenPixel), size: CGSize(width: params.width, height: strongSelf.backgroundNode.frame.height + UIScreenPixel + UIScreenPixel)), aboveNodes: [strongSelf.bottomStripeNode, strongSelf.topStripeNode, strongSelf.backgroundNode])
++
++                    strongSelf.updateLayout(size: layout.contentSize, leftInset: params.leftInset, rightInset: params.rightInset)
++
++                    strongSelf.setRevealOptions((left: [], right: []))
++                }
++            })
++        }
++    }
++
++    override func setHighlighted(_ highlighted: Bool, at point: CGPoint, animated: Bool) {
++        super.setHighlighted(highlighted, at: point, animated: animated)
++
++        self.isHighlighted = highlighted
++        self.updateRevealOptionsHighlightedBackgroundNode(self.highlightedBackgroundNode, isHighlighted: self.isHighlighted, transition: (animated && !highlighted) ? .animated(duration: 0.4, curve: .easeInOut) : .immediate, aboveNodes: [self.bottomStripeNode, self.topStripeNode, self.backgroundNode])
++    }
++
++    override func animateInsertion(_ currentTimestamp: Double, duration: Double, options: ListViewItemAnimationOptions) {
++        self.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.4)
++    }
++
++    override func animateRemoved(_ currentTimestamp: Double, duration: Double) {
++        self.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.15, removeOnCompletion: false)
++    }
++
++    override func updateRevealOffset(offset: CGFloat, transition: ContainedViewLayoutTransition) {
++        super.updateRevealOffset(offset: offset, transition: transition)
++
++        transition.updateFrame(node: self.contentContainerNode, frame: CGRect(origin: CGPoint(x: offset, y: self.contentContainerNode.frame.minY), size: self.contentContainerNode.bounds.size))
++    }
++
++    override func revealOptionsActiveStateUpdated(isActive: Bool, transition: ContainedViewLayoutTransition) {
++        super.revealOptionsActiveStateUpdated(isActive: isActive, transition: transition)
++
++        self.updateRevealOptionsHighlightedBackgroundNode(self.highlightedBackgroundNode, isHighlighted: self.isHighlighted, transition: transition, aboveNodes: [self.bottomStripeNode, self.topStripeNode, self.backgroundNode])
++    }
 +}
 diff --git a/submodules/SettingsUI/Sources/AyoSettingsController.swift b/submodules/SettingsUI/Sources/AyoSettingsController.swift
 new file mode 100644
@@ -2371,10 +2703,42 @@ index 6da2641fe..1027d986f 100644
      let innerSize = CGSize(width: fixedMainDiameter + 6.0, height: fixedMainDiameter)
      let strokeInset: CGFloat = 1.0
 diff --git a/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift b/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
-index 3f0398e98..d1962d882 100644
+index 3f0398e98..9c5eb1604 100644
 --- a/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
 +++ b/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
-@@ -130,5 +130,5 @@ public func makePresentationTheme(mediaBox: MediaBox, themeReference: Presentati
+@@ -16,21 +16,26 @@ public func makeDefaultPresentationTheme(reference: PresentationBuiltinThemeRefe
+         case .nightAccent:
+             theme = makeDefaultDarkTintedPresentationTheme(extendingThemeReference: extendingThemeReference, preview: preview)
+     }
+-    return theme
++    // Ayo: apply user bubble/text overrides on the base theme so they also cover
++    // channels, groups and any context that uses the default theme directly.
++    return ayoApplyAppearance(theme)
+ }
+ 
+ public func customizePresentationTheme(_ theme: PresentationTheme, editing: Bool, title: String? = nil, accentColor: UIColor?, outgoingAccentColor: UIColor?, backgroundColors: [UInt32], bubbleColors: [UInt32], animateBubbleColors: Bool?, wallpaper: TelegramWallpaper? = nil, baseColor: PresentationThemeBaseColor? = nil) -> PresentationTheme {
+     if accentColor == nil && bubbleColors.isEmpty && backgroundColors.isEmpty && wallpaper == nil {
+-        return theme
++        return ayoApplyAppearance(theme)
+     }
++    let result: PresentationTheme
+     switch theme.referenceTheme {
+         case .day, .dayClassic:
+-            return customizeDefaultDayTheme(theme: theme, editing: editing, title: title, accentColor: accentColor, outgoingAccentColor: outgoingAccentColor, backgroundColors: backgroundColors, bubbleColors: bubbleColors, animateBubbleColors: animateBubbleColors ?? false, wallpaper: wallpaper, serviceBackgroundColor: nil)
++            result = customizeDefaultDayTheme(theme: theme, editing: editing, title: title, accentColor: accentColor, outgoingAccentColor: outgoingAccentColor, backgroundColors: backgroundColors, bubbleColors: bubbleColors, animateBubbleColors: animateBubbleColors ?? false, wallpaper: wallpaper, serviceBackgroundColor: nil)
+         case .night:
+-            return customizeDefaultDarkPresentationTheme(theme: theme, editing: editing, title: title, accentColor: accentColor, backgroundColors: backgroundColors, bubbleColors: bubbleColors, animateBubbleColors: animateBubbleColors ?? false, wallpaper: wallpaper, baseColor: baseColor)
++            result = customizeDefaultDarkPresentationTheme(theme: theme, editing: editing, title: title, accentColor: accentColor, backgroundColors: backgroundColors, bubbleColors: bubbleColors, animateBubbleColors: animateBubbleColors ?? false, wallpaper: wallpaper, baseColor: baseColor)
+         case .nightAccent:
+-            return customizeDefaultDarkTintedPresentationTheme(theme: theme, editing: editing, title: title, accentColor: accentColor, backgroundColors: backgroundColors, bubbleColors: bubbleColors, animateBubbleColors: animateBubbleColors ?? false, wallpaper: wallpaper, baseColor: baseColor)
++            result = customizeDefaultDarkTintedPresentationTheme(theme: theme, editing: editing, title: title, accentColor: accentColor, backgroundColors: backgroundColors, bubbleColors: bubbleColors, animateBubbleColors: animateBubbleColors ?? false, wallpaper: wallpaper, baseColor: baseColor)
+     }
++    // Ayo: user overrides win over native per-theme bubble colors.
++    return ayoApplyAppearance(result)
+ }
+ 
+ public func makePresentationTheme(settings: TelegramThemeSettings, title: String? = nil, serviceBackgroundColor: UIColor? = nil) -> PresentationTheme? {
+@@ -130,5 +135,5 @@ public func makePresentationTheme(mediaBox: MediaBox, themeReference: Presentati
                  return nil
              }
      }

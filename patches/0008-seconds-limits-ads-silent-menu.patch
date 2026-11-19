@@ -1,0 +1,594 @@
+diff --git a/submodules/SettingsUI/Sources/AyoSettingsController.swift b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+index 01415804..d7f5fa05 100644
+--- a/submodules/SettingsUI/Sources/AyoSettingsController.swift
++++ b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+@@ -8,64 +8,75 @@ import ItemListUI
+ import PresentationDataUtils
+ import AccountContext
+ 
+-private final class AyoSettingsArguments {
++private final class AyoArguments {
+     let toggle: (String, Bool) -> Void
+-    let clearHistory: () -> Void
+-    let selectOption: (String) -> Void
+-    init(toggle: @escaping (String, Bool) -> Void, clearHistory: @escaping () -> Void, selectOption: @escaping (String) -> Void) {
++    let select: (String) -> Void
++    init(toggle: @escaping (String, Bool) -> Void, select: @escaping (String) -> Void) {
+         self.toggle = toggle
+-        self.clearHistory = clearHistory
+-        self.selectOption = selectOption
++        self.select = select
+     }
+ }
+ 
+-private enum AyoSettingsEntry: ItemListNodeEntry {
++private enum AyoRow {
++    case header(String)
++    case toggle(key: String, title: String, value: Bool)
++    case option(key: String, title: String, checked: Bool)
++    case disclosure(key: String, title: String, label: String, icon: UIImage?)
++    case action(key: String, title: String, destructive: Bool)
++    case footer(String)
++}
++
++private struct AyoSection {
++    let rows: [AyoRow]
++}
++
++private enum AyoEntry: ItemListNodeEntry {
+     case header(id: Int32, section: Int32, text: String)
+     case toggle(id: Int32, section: Int32, key: String, title: String, value: Bool)
+-    case footer(id: Int32, section: Int32, text: String)
+-    case clearHistory(id: Int32, section: Int32)
+     case option(id: Int32, section: Int32, key: String, title: String, checked: Bool)
+-    case appearanceLink(id: Int32, section: Int32)
++    case disclosure(id: Int32, section: Int32, key: String, title: String, label: String, icon: UIImage?)
++    case action(id: Int32, section: Int32, key: String, title: String, destructive: Bool)
++    case footer(id: Int32, section: Int32, text: String)
+ 
+     var section: ItemListSectionId {
+         switch self {
+-        case let .header(_, section, _), let .toggle(_, section, _, _, _), let .footer(_, section, _), let .clearHistory(_, section), let .option(_, section, _, _, _), let .appearanceLink(_, section):
++        case let .header(_, section, _), let .toggle(_, section, _, _, _), let .option(_, section, _, _, _), let .disclosure(_, section, _, _, _, _), let .action(_, section, _, _, _), let .footer(_, section, _):
+             return section
+         }
+     }
+ 
+     var stableId: Int32 {
+         switch self {
+-        case let .header(id, _, _), let .toggle(id, _, _, _, _), let .footer(id, _, _), let .clearHistory(id, _), let .option(id, _, _, _, _), let .appearanceLink(id, _):
++        case let .header(id, _, _), let .toggle(id, _, _, _, _), let .option(id, _, _, _, _), let .disclosure(id, _, _, _, _, _), let .action(id, _, _, _, _), let .footer(id, _, _):
+             return id
+         }
+     }
+ 
+-    static func ==(lhs: AyoSettingsEntry, rhs: AyoSettingsEntry) -> Bool {
++    static func ==(lhs: AyoEntry, rhs: AyoEntry) -> Bool {
+         switch (lhs, rhs) {
+-        case let (.header(lId, lSection, lText), .header(rId, rSection, rText)):
+-            return lId == rId && lSection == rSection && lText == rText
+-        case let (.toggle(lId, lSection, lKey, lTitle, lValue), .toggle(rId, rSection, rKey, rTitle, rValue)):
+-            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lValue == rValue
+-        case let (.footer(lId, lSection, lText), .footer(rId, rSection, rText)):
+-            return lId == rId && lSection == rSection && lText == rText
+-        case let (.clearHistory(lId, lSection), .clearHistory(rId, rSection)):
+-            return lId == rId && lSection == rSection
+-        case let (.appearanceLink(lId, lSection), .appearanceLink(rId, rSection)):
+-            return lId == rId && lSection == rSection
+-        case let (.option(lId, lSection, lKey, lTitle, lChecked), .option(rId, rSection, rKey, rTitle, rChecked)):
+-            return lId == rId && lSection == rSection && lKey == rKey && lTitle == rTitle && lChecked == rChecked
++        case let (.header(lId, lS, lT), .header(rId, rS, rT)):
++            return lId == rId && lS == rS && lT == rT
++        case let (.toggle(lId, lS, lK, lT, lV), .toggle(rId, rS, rK, rT, rV)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lV == rV
++        case let (.option(lId, lS, lK, lT, lV), .option(rId, rS, rK, rT, rV)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lV == rV
++        case let (.disclosure(lId, lS, lK, lT, lL, _), .disclosure(rId, rS, rK, rT, rL, _)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lL == rL
++        case let (.action(lId, lS, lK, lT, lD), .action(rId, rS, rK, rT, rD)):
++            return lId == rId && lS == rS && lK == rK && lT == rT && lD == rD
++        case let (.footer(lId, lS, lT), .footer(rId, rS, rT)):
++            return lId == rId && lS == rS && lT == rT
+         default:
+             return false
+         }
+     }
+ 
+-    static func <(lhs: AyoSettingsEntry, rhs: AyoSettingsEntry) -> Bool {
++    static func <(lhs: AyoEntry, rhs: AyoEntry) -> Bool {
+         return lhs.stableId < rhs.stableId
+     }
+ 
+     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+-        let arguments = arguments as! AyoSettingsArguments
++        let arguments = arguments as! AyoArguments
+         switch self {
+         case let .header(_, section, text):
+             return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: section)
+@@ -73,134 +84,274 @@ private enum AyoSettingsEntry: ItemListNodeEntry {
+             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: section, style: .blocks, updated: { value in
+                 arguments.toggle(key, value)
+             })
+-        case let .footer(_, section, text):
+-            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: section)
+-        case let .clearHistory(_, section):
+-            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: "Очистить сохранённую историю", kind: .destructive, alignment: .natural, sectionId: section, style: .blocks, action: {
+-                arguments.clearHistory()
+-            })
+-        case let .appearanceLink(_, section):
+-            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: PresentationResourcesSettings.ayoSettings, title: "Оформление: цвета, форма, шрифт", label: "", labelStyle: .text, sectionId: section, style: .blocks, disclosureStyle: .arrow, action: {
+-                arguments.selectOption("appearance")
+-            })
+         case let .option(_, section, key, title, checked):
+             return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: title, style: .left, checked: checked, zeroSeparatorInsets: false, sectionId: section, action: {
+-                arguments.selectOption(key)
++                arguments.select(key)
++            })
++        case let .disclosure(_, section, key, title, label, icon):
++            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: icon, title: title, label: label, labelStyle: .text, sectionId: section, style: .blocks, disclosureStyle: .arrow, action: {
++                arguments.select(key)
++            })
++        case let .action(_, section, key, title, destructive):
++            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: destructive ? .destructive : .generic, alignment: .natural, sectionId: section, style: .blocks, action: {
++                arguments.select(key)
+             })
++        case let .footer(_, section, text):
++            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: section)
+         }
+     }
+ }
+ 
+-private func ayoSettingsEntries() -> [AyoSettingsEntry] {
+-    var entries: [AyoSettingsEntry] = []
+-
+-    entries.append(.appearanceLink(id: -10, section: -1))
+-
+-    entries.append(.header(id: 0, section: 0, text: "РЕЖИМ ПРИЗРАКА"))
+-    entries.append(.toggle(id: 1, section: 0, key: "master", title: "Режим призрака", value: AyuSettings.ghostModeEnabled))
+-    entries.append(.toggle(id: 2, section: 0, key: "read", title: "Не отмечать прочитанным", value: AyuSettings.dontReadMessages))
+-    entries.append(.toggle(id: 3, section: 0, key: "typing", title: "Не показывать «печатает»", value: AyuSettings.dontSendTyping))
+-    entries.append(.toggle(id: 4, section: 0, key: "online", title: "Не показывать «в сети»", value: AyuSettings.dontSendOnline))
+-    entries.append(.footer(id: 5, section: 0, text: "Собеседники не увидят, что вы прочитали сообщение, печатаете или находитесь в приложении."))
+-
+-    entries.append(.header(id: 10, section: 1, text: "ИСТОРИЯ СООБЩЕНИЙ"))
+-    entries.append(.toggle(id: 11, section: 1, key: "keepDeleted", title: "Сохранять удалённые", value: AyuSettings.keepDeletedMessages))
+-    entries.append(.toggle(id: 12, section: 1, key: "keepEdits", title: "Сохранять историю правок", value: AyuSettings.keepEditHistory))
+-    entries.append(.toggle(id: 13, section: 1, key: "notifyDeletedEdited", title: "Уведомлять об удалении и правках", value: AyuSettings.notifyDeletedEdited))
+-    entries.append(.clearHistory(id: 14, section: 1))
+-    entries.append(.footer(id: 15, section: 1, text: "Удалённые собеседником сообщения остаются в чате с пометкой 🗑. Прошлые версии изменённых сообщений — в меню сообщения → «История правок». Уведомления приходят по личным чатам, пока AyoGram запущен."))
+-
+-    entries.append(.header(id: 20, section: 2, text: "ОГРАНИЧЕНИЯ"))
+-    entries.append(.toggle(id: 21, section: 2, key: "copy", title: "Обходить запрет копирования", value: AyuSettings.bypassCopyProtection))
+-    entries.append(.toggle(id: 22, section: 2, key: "screenshots", title: "Разрешить скриншоты", value: AyuSettings.allowScreenshots))
+-    entries.append(.toggle(id: 23, section: 2, key: "screenshotNotify", title: "Не уведомлять о скриншотах", value: AyuSettings.dontNotifyScreenshots))
+-    entries.append(.footer(id: 24, section: 2, text: "Копирование, сохранение и скриншоты в защищённых чатах. Изменения применяются после повторного открытия чата."))
+-
+-    entries.append(.header(id: 30, section: 3, text: "ПРОЧЕЕ"))
+-    entries.append(.toggle(id: 31, section: 3, key: "unlockFrameRate", title: "60 FPS в камере, кружках и видео", value: AyuSettings.unlockFrameRate))
+-    entries.append(.toggle(id: 32, section: 3, key: "unlimitedPins", title: "Без лимита закреплённых чатов", value: AyuSettings.unlimitedPins))
+-    entries.append(.toggle(id: 33, section: 3, key: "chatListButton", title: "Кнопка Ayo на главном экране", value: AyuSettings.showChatListSettingsButton))
+-    entries.append(.toggle(id: 34, section: 3, key: "uploadProgress", title: "Проценты загрузки при отправке", value: AyuSettings.showUploadProgress))
+-    entries.append(.toggle(id: 35, section: 3, key: "callLiveActivity", title: "Звонок в Dynamic Island", value: AyuSettings.callLiveActivity))
+-    entries.append(.footer(id: 39, section: 3, text: "Сверх лимита закрепы хранятся только на этом устройстве: сервер Telegram не принимает больше своего лимита."))
+-
+-    let cacheInterval = AyuSettings.autoCacheCleanInterval
+-    entries.append(.header(id: 40, section: 4, text: "АВТООЧИСТКА КЭША"))
+-    entries.append(.option(id: 41, section: 4, key: "cache:0", title: "Выключена", checked: cacheInterval == 0))
+-    entries.append(.option(id: 42, section: 4, key: "cache:-1", title: "При каждом запуске", checked: cacheInterval == -1))
+-    entries.append(.option(id: 43, section: 4, key: "cache:86400", title: "Раз в день", checked: cacheInterval == 86400))
+-    entries.append(.option(id: 44, section: 4, key: "cache:604800", title: "Раз в неделю", checked: cacheInterval == 604800))
+-    entries.append(.footer(id: 45, section: 4, text: "Удаляет скачанные фото, видео, файлы, музыку и истории. Стикеры и аватарки остаются. Сообщения не удаляются — медиа скачается заново при открытии."))
+-
++private func ayoEntries(_ sections: [AyoSection]) -> [AyoEntry] {
++    var entries: [AyoEntry] = []
++    var id: Int32 = 0
++    for (sectionIndex, section) in sections.enumerated() {
++        let sectionId = Int32(sectionIndex)
++        for row in section.rows {
++            switch row {
++            case let .header(text):
++                entries.append(.header(id: id, section: sectionId, text: text))
++            case let .toggle(key, title, value):
++                entries.append(.toggle(id: id, section: sectionId, key: key, title: title, value: value))
++            case let .option(key, title, checked):
++                entries.append(.option(id: id, section: sectionId, key: key, title: title, checked: checked))
++            case let .disclosure(key, title, label, icon):
++                entries.append(.disclosure(id: id, section: sectionId, key: key, title: title, label: label, icon: icon))
++            case let .action(key, title, destructive):
++                entries.append(.action(id: id, section: sectionId, key: key, title: title, destructive: destructive))
++            case let .footer(text):
++                entries.append(.footer(id: id, section: sectionId, text: text))
++            }
++            id += 1
++        }
++    }
+     return entries
+ }
+ 
+-public func ayoSettingsController(context: AccountContext) -> ViewController {
++private func ayoListController(context: AccountContext, title: String, sectionsBuilder: @escaping () -> [AyoSection], toggle: @escaping (String, Bool) -> Void, select: @escaping (String, AyoArguments) -> Void) -> ViewController {
+     let refresh = ValuePromise<Int>(0, ignoreRepeated: false)
+     var counter = 0
+-    var presentControllerImpl: ((ViewController) -> Void)?
+-    var pushControllerImpl: ((ViewController) -> Void)?
++    func reload() {
++        counter += 1
++        refresh.set(counter)
++    }
++
++    var argumentsRef: AyoArguments?
++    let arguments = AyoArguments(toggle: { key, value in
++        toggle(key, value)
++        reload()
++    }, select: { key in
++        if let argumentsRef {
++            select(key, argumentsRef)
++        }
++    })
++    argumentsRef = arguments
++
++    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, refresh.get())
++    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
++        var presentationData = presentationData
++        presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
++        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(title), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: ayoEntries(sectionsBuilder()), style: .blocks, animateChanges: false)
++        return (controllerState, (listState, arguments))
++    }
++
++    return ItemListController(context: context, state: signal)
++}
++
++// MARK: - Hub
++
++public func ayoSettingsController(context: AccountContext) -> ViewController {
++    weak var hubController: ViewController?
++    let icon = PresentationResourcesSettings.ayoSettings
+ 
+-    let arguments = AyoSettingsArguments(toggle: { key, value in
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .disclosure(key: "open:ghost", title: "Режим призрака", label: AyuSettings.ghostModeEnabled ? "Вкл" : "", icon: icon),
++                .disclosure(key: "open:spy", title: "Шпион", label: "", icon: icon),
++                .disclosure(key: "open:custom", title: "Кастомизация", label: "", icon: icon),
++                .disclosure(key: "open:limits", title: "Ограничения", label: "", icon: icon),
++                .disclosure(key: "open:appearance", title: "Оформление", label: "", icon: icon),
++            ]),
++            AyoSection(rows: [
++                .footer("AyoGram — форк Telegram с приватностью и кастомизацией. Часть изменений применяется после перезапуска приложения."),
++            ]),
++        ]
++    }
++
++    let controller = ayoListController(context: context, title: "Ayo настройки", sectionsBuilder: sections, toggle: { _, _ in }, select: { key, _ in
++        guard key.hasPrefix("open:") else {
++            return
++        }
++        let target = String(key.dropFirst("open:".count))
++        let sub: ViewController
++        switch target {
++        case "ghost": sub = ayoGhostController(context: context)
++        case "spy": sub = ayoSpyController(context: context)
++        case "custom": sub = ayoCustomController(context: context)
++        case "limits": sub = ayoLimitsController(context: context)
++        case "appearance": sub = ayoAppearanceController(context: context)
++        default: return
++        }
++        hubController?.push(sub)
++    })
++    hubController = controller
++    return controller
++}
++
++// MARK: - Ghost mode
++
++private func ayoGhostController(context: AccountContext) -> ViewController {
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .header("РЕЖИМ ПРИЗРАКА"),
++                .toggle(key: "master", title: "Режим призрака", value: AyuSettings.ghostModeEnabled),
++                .toggle(key: "read", title: "Не отмечать прочитанным", value: AyuSettings.dontReadMessages),
++                .toggle(key: "typing", title: "Не показывать «печатает»", value: AyuSettings.dontSendTyping),
++                .toggle(key: "online", title: "Не показывать «в сети»", value: AyuSettings.dontSendOnline),
++                .footer("Собеседники не увидят, что вы прочитали сообщение, печатаете или находитесь в приложении."),
++            ]),
++            AyoSection(rows: [
++                .header("ОТПРАВКА"),
++                .toggle(key: "silent", title: "Всегда без звука", value: AyuSettings.sendSilentlyByDefault),
++                .footer("Исходящие сообщения отправляются без звука. Долгое нажатие на «отправить» → «со звуком» по-прежнему работает."),
++            ]),
++        ]
++    }
++    return ayoListController(context: context, title: "Режим призрака", sectionsBuilder: sections, toggle: { key, value in
+         switch key {
+         case "master": AyuSettings.ghostModeEnabled = value
+         case "read": AyuSettings.dontReadMessages = value
+         case "typing": AyuSettings.dontSendTyping = value
+         case "online": AyuSettings.dontSendOnline = value
++        case "silent": AyuSettings.sendSilentlyByDefault = value
++        default: break
++        }
++    }, select: { _, _ in })
++}
++
++// MARK: - Spy
++
++private func ayoSpyController(context: AccountContext) -> ViewController {
++    weak var controllerRef: ViewController?
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .header("ИСТОРИЯ СООБЩЕНИЙ"),
++                .toggle(key: "keepDeleted", title: "Сохранять удалённые", value: AyuSettings.keepDeletedMessages),
++                .toggle(key: "keepEdits", title: "Сохранять историю правок", value: AyuSettings.keepEditHistory),
++                .toggle(key: "translucentDeleted", title: "Удалённые полупрозрачными", value: AyuSettings.translucentDeleted),
++                .toggle(key: "notifyDeletedEdited", title: "Уведомлять об удалении и правках", value: AyuSettings.notifyDeletedEdited),
++                .action(key: "clear", title: "Очистить сохранённую историю", destructive: true),
++                .footer("Удалённые собеседником сообщения остаются в чате с пометкой 🗑. Прошлые версии изменённых сообщений — в меню сообщения → «История правок». Уведомления приходят по личным чатам, пока AyoGram запущен."),
++            ]),
++        ]
++    }
++    let controller = ayoListController(context: context, title: "Шпион", sectionsBuilder: sections, toggle: { key, value in
++        switch key {
+         case "keepDeleted": AyuSettings.keepDeletedMessages = value
+         case "keepEdits": AyuSettings.keepEditHistory = value
++        case "translucentDeleted": AyuSettings.translucentDeleted = value
+         case "notifyDeletedEdited": AyuSettings.notifyDeletedEdited = value
+-        case "copy": AyuSettings.bypassCopyProtection = value
+-        case "screenshots": AyuSettings.allowScreenshots = value
+-        case "screenshotNotify": AyuSettings.dontNotifyScreenshots = value
+-        case "unlockFrameRate": AyuSettings.unlockFrameRate = value
+-        case "unlimitedPins": AyuSettings.unlimitedPins = value
+-        case "chatListButton": AyuSettings.showChatListSettingsButton = value
++        default: break
++        }
++    }, select: { key, _ in
++        if key == "clear" {
++            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++            controllerRef?.present(textAlertController(context: context, title: nil, text: "Удалить сохранённые удалённые сообщения и историю правок?", actions: [
++                TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
++                TextAlertAction(type: .defaultDestructiveAction, title: presentationData.strings.Common_Delete, action: {
++                    AyuMessageHistory.shared.clear()
++                })
++            ]), in: .window(.root))
++        }
++    })
++    controllerRef = controller
++    return controller
++}
++
++// MARK: - Customization
++
++private func ayoCustomController(context: AccountContext) -> ViewController {
++    weak var controllerRef: ViewController?
++    let sections: () -> [AyoSection] = {
++        let cacheInterval = AyuSettings.autoCacheCleanInterval
++        return [
++            AyoSection(rows: [
++                .disclosure(key: "appearance", title: "Оформление: цвета, форма, шрифт", label: "", icon: PresentationResourcesSettings.ayoSettings),
++            ]),
++            AyoSection(rows: [
++                .header("ИНТЕРФЕЙС"),
++                .toggle(key: "seconds", title: "Секунды во времени сообщений", value: AyuSettings.showSeconds),
++                .toggle(key: "disableAds", title: "Скрывать рекламу в каналах", value: AyuSettings.disableAds),
++                .toggle(key: "uploadProgress", title: "Проценты загрузки при отправке", value: AyuSettings.showUploadProgress),
++                .toggle(key: "chatListButton", title: "Кнопка Ayo на главном экране", value: AyuSettings.showChatListSettingsButton),
++                .toggle(key: "callLiveActivity", title: "Звонок в Dynamic Island", value: AyuSettings.callLiveActivity),
++                .toggle(key: "unlockFrameRate", title: "60 FPS в камере, кружках и видео", value: AyuSettings.unlockFrameRate),
++            ]),
++            AyoSection(rows: [
++                .header("АВТООЧИСТКА КЭША"),
++                .option(key: "cache:0", title: "Выключена", checked: cacheInterval == 0),
++                .option(key: "cache:-1", title: "При каждом запуске", checked: cacheInterval == -1),
++                .option(key: "cache:86400", title: "Раз в день", checked: cacheInterval == 86400),
++                .option(key: "cache:604800", title: "Раз в неделю", checked: cacheInterval == 604800),
++                .footer("Удаляет скачанные фото, видео, файлы, музыку и истории. Стикеры и аватарки остаются. Сообщения не удаляются — медиа скачается заново при открытии."),
++            ]),
++        ]
++    }
++    let controller = ayoListController(context: context, title: "Кастомизация", sectionsBuilder: sections, toggle: { key, value in
++        switch key {
++        case "seconds": AyuSettings.showSeconds = value
++        case "disableAds": AyuSettings.disableAds = value
+         case "uploadProgress": AyuSettings.showUploadProgress = value
++        case "chatListButton": AyuSettings.showChatListSettingsButton = value
+         case "callLiveActivity": AyuSettings.callLiveActivity = value
++        case "unlockFrameRate": AyuSettings.unlockFrameRate = value
+         default: break
+         }
+-        counter += 1
+-        refresh.set(counter)
+-    }, clearHistory: {
+-        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+-        presentControllerImpl?(textAlertController(context: context, title: nil, text: "Удалить сохранённые удалённые сообщения и историю правок?", actions: [
+-            TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+-            TextAlertAction(type: .defaultDestructiveAction, title: presentationData.strings.Common_Delete, action: {
+-                AyuMessageHistory.shared.clear()
+-            })
+-        ]))
+-    }, selectOption: { key in
++    }, select: { key, _ in
+         if key == "appearance" {
+-            pushControllerImpl?(ayoAppearanceController(context: context))
++            controllerRef?.push(ayoAppearanceController(context: context))
+             return
+         }
+         if key.hasPrefix("cache:"), let value = Int(key.dropFirst("cache:".count)) {
+             AyuSettings.autoCacheCleanInterval = value
+         }
+-        counter += 1
+-        refresh.set(counter)
+     })
++    controllerRef = controller
++    return controller
++}
+ 
+-    let signal = combineLatest(queue: .mainQueue(),
+-        context.sharedContext.presentationData,
+-        refresh.get()
+-    )
+-    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
+-        var presentationData = presentationData
+-        presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
+-
+-        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Ayo настройки"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
+-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: ayoSettingsEntries(), style: .blocks, animateChanges: false)
+-        return (controllerState, (listState, arguments))
+-    }
++// MARK: - Limits & restrictions
+ 
+-    let controller = ItemListController(context: context, state: signal)
+-    presentControllerImpl = { [weak controller] c in
+-        controller?.present(c, in: .window(.root))
++private func ayoLimitsController(context: AccountContext) -> ViewController {
++    let sections: () -> [AyoSection] = {
++        return [
++            AyoSection(rows: [
++                .header("ЗАЩИЩЁННЫЕ ЧАТЫ"),
++                .toggle(key: "copy", title: "Обходить запрет копирования", value: AyuSettings.bypassCopyProtection),
++                .toggle(key: "screenshots", title: "Разрешить скриншоты", value: AyuSettings.allowScreenshots),
++                .toggle(key: "screenshotNotify", title: "Не уведомлять о скриншотах", value: AyuSettings.dontNotifyScreenshots),
++                .footer("Копирование, сохранение и скриншоты в защищённых чатах. Изменения применяются после повторного открытия чата."),
++            ]),
++            AyoSection(rows: [
++                .header("ЛИМИТЫ"),
++                .toggle(key: "removeAllLimits", title: "Снять лимиты (закрепы, стикеры, папки…)", value: AyuSettings.removeAllLimits),
++                .footer("Снимает ограничения клиента на число закреплённых чатов, сохранённых стикеров и GIF, папок и т.п. Сервер Telegram всё равно держит свой лимит, поэтому лишние элементы хранятся только на этом устройстве и на других устройствах могут не появиться."),
++            ]),
++        ]
+     }
+-    pushControllerImpl = { [weak controller] c in
+-        controller?.push(c)
+-    }
+-    return controller
++    return ayoListController(context: context, title: "Ограничения", sectionsBuilder: sections, toggle: { key, value in
++        switch key {
++        case "copy": AyuSettings.bypassCopyProtection = value
++        case "screenshots": AyuSettings.allowScreenshots = value
++        case "screenshotNotify": AyuSettings.dontNotifyScreenshots = value
++        case "removeAllLimits":
++            AyuSettings.removeAllLimits = value
++            AyuSettings.unlimitedPins = value
++        default: break
++        }
++    }, select: { _, _ in })
+ }
+diff --git a/submodules/TelegramCore/Sources/AyuSettings.swift b/submodules/TelegramCore/Sources/AyuSettings.swift
+index 8fc1a84c..4392c274 100644
+--- a/submodules/TelegramCore/Sources/AyuSettings.swift
++++ b/submodules/TelegramCore/Sources/AyuSettings.swift
+@@ -111,6 +111,30 @@ public enum AyuSettings {
+         set { writeFlag("ayo.keepEditHistory", newValue) }
+     }
+ 
++    // Interface
++    public static var showSeconds: Bool {
++        get { return readFlag("ayo.showSeconds", false) }
++        set { writeFlag("ayo.showSeconds", newValue) }
++    }
++    public static var translucentDeleted: Bool {
++        get { return readFlag("ayo.translucentDeleted", true) }
++        set { writeFlag("ayo.translucentDeleted", newValue) }
++    }
++    public static var disableAds: Bool {
++        get { return readFlag("ayo.disableAds", true) }
++        set { writeFlag("ayo.disableAds", newValue) }
++    }
++    public static var sendSilentlyByDefault: Bool {
++        get { return readFlag("ayo.sendSilentlyByDefault", false) }
++        set { writeFlag("ayo.sendSilentlyByDefault", newValue) }
++    }
++    /// Lift client-side collection limits (pins, saved stickers/gifs, folders, …).
++    /// The server still enforces its own caps; extra entries live only on this device.
++    public static var removeAllLimits: Bool {
++        get { return readFlag("ayo.removeAllLimits", true) }
++        set { writeFlag("ayo.removeAllLimits", newValue) }
++    }
++
+     // Misc
+     public static var unlockFrameRate: Bool {
+         get { return readFlag("ayo.unlockFrameRate", true) }
+diff --git a/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift b/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
+index 4aaa1a66..b635fa3f 100644
+--- a/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
++++ b/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
+@@ -187,5 +187,19 @@ extension UserLimitsConfiguration {
+         self.maxBotsCreated = getValue("bots_create_limit", orElse: defaultValue.maxBotsCreated)
+         self.maxOwnedAITextStyles = getValue("aicompose_tone_saved_limit", orElse: defaultValue.maxBotsCreated)
+         self.maxMessageLength = getValue("message_length_limit", orElse: defaultValue.maxMessageLength)
++
++        // Ayo: lift client-side collection limits (server still enforces its own caps).
++        if AyuSettings.removeAllLimits {
++            let big: Int32 = 1_000_000
++            self.maxPinnedChatCount = max(self.maxPinnedChatCount, big)
++            self.maxPinnedSavedChatCount = max(self.maxPinnedSavedChatCount, big)
++            self.maxArchivedPinnedChatCount = max(self.maxArchivedPinnedChatCount, big)
++            self.maxChannelsCount = max(self.maxChannelsCount, big)
++            self.maxPublicLinksCount = max(self.maxPublicLinksCount, big)
++            self.maxSavedGifCount = max(self.maxSavedGifCount, big)
++            self.maxFavedStickerCount = max(self.maxFavedStickerCount, big)
++            self.maxFoldersCount = max(self.maxFoldersCount, big)
++            self.maxFolderChatsCount = max(self.maxFolderChatsCount, big)
++        }
+     }
+ }
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+index 8c48207f..566b6263 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+@@ -635,6 +635,9 @@ public class AdMessagesHistoryContext {
+     public let messageId: EngineMessage.Id?
+     
+     public var state: Signal<(interPostInterval: Int32?, messages: [Message], startDelay: Int32?, betweenDelay: Int32?), NoError> {
++        if AyuSettings.disableAds {
++            return .single((interPostInterval: nil, messages: [], startDelay: nil, betweenDelay: nil))
++        }
+         return Signal { subscriber in
+             let disposable = MetaDisposable()
+             
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+index 2dcfc95e..dc46469a 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+@@ -3928,6 +3928,12 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+         strongSelf.contentContainersWrapperNode.frame = CGRect(origin: CGPoint(), size: layout.contentSize)
+         
+         strongSelf.appliedItem = item
++        // Ayo: translucent bubbles for messages deleted by the other side
++        if AyuSettings.translucentDeleted {
++            strongSelf.mainContextSourceNode.contentNode.alpha = AyuMessageHistory.shared.isDeleted(item.content.firstMessage.id) ? 0.5 : 1.0
++        } else {
++            strongSelf.mainContextSourceNode.contentNode.alpha = 1.0
++        }
+         strongSelf.appliedForwardInfo = (forwardSource, forwardAuthorSignature)
+         strongSelf.updateAccessibilityData(accessibilityData)
+         strongSelf.disablesComments = disablesComments
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+index 16927037..689c92f2 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+@@ -107,7 +107,7 @@ public func stringForMessageTimestampStatus(
+         timestamp = orignalDate
+     }
+     
+-    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)
++    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: AyuSettings.showSeconds)
+     if timestamp == scheduleWhenOnlineTimestamp {
+         dateText = "         "
+     }
+diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
+index 250f2049..780e2a2c 100644
+--- a/submodules/TelegramUI/Sources/ChatController.swift
++++ b/submodules/TelegramUI/Sources/ChatController.swift
+@@ -8743,7 +8743,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+     }
+             
+     func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone: Bool = false) -> [EnqueueMessage] {
+-        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting
++        // Ayo: optional silent-by-default for the normal send button (long-press "send with sound" still overrides)
++        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || (AyuSettings.sendSilentlyByDefault && self.presentationInterfaceState.chatLocation.peerId?.namespace != Namespaces.Peer.SecretChat)
+         return transformEnqueueMessages(messages, silentPosting: silentPosting, postpone: postpone)
+     }
+     

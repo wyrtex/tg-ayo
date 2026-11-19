@@ -260,10 +260,11 @@ index 44d09f560..2a3cbabb4 100644
      let sharedContext = context.sharedContext
 diff --git a/submodules/AyoCallActivity/BUILD b/submodules/AyoCallActivity/BUILD
 new file mode 100644
-index 000000000..c31dac081
+index 000000000..0e4e0104c
 --- /dev/null
 +++ b/submodules/AyoCallActivity/BUILD
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,33 @@
++load("@rules_cc//cc:objc_library.bzl", "objc_library")
 +load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 +
 +objc_library(

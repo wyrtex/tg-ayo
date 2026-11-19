@@ -1,16 +1,16 @@
 diff --git a/Telegram/BUILD b/Telegram/BUILD
-index 1ac8279b..f1d3f079 100644
+index fd73a6aea..b2c6d355b 100644
 --- a/Telegram/BUILD
 +++ b/Telegram/BUILD
-@@ -1292,6 +1292,7 @@ swift_library(
+@@ -1215,6 +1215,7 @@ swift_library(
          "//submodules/BuildConfig:BuildConfig",
          "//submodules/WidgetItems:WidgetItems_iOS14",
          "//submodules/WidgetItemsUtils:WidgetItemsUtils",
 +        "//submodules/AyoCallActivity:AyoCallActivity",
          "//submodules/AppLockState:AppLockState",
          "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
-         "//submodules/TelegramCore:TelegramCore",
-@@ -1350,6 +1351,9 @@ ios_extension(
+         "//submodules/Postbox:Postbox",
+@@ -1274,6 +1275,9 @@ ios_extension(
      deps = [
          ":WidgetExtensionLib",
      ],
@@ -20,7 +20,7 @@ index 1ac8279b..f1d3f079 100644
      frameworks = [
          ":SwiftSignalKitFramework",
          ":PostboxFramework",
-@@ -1691,6 +1695,8 @@ plist_fragment(
+@@ -1616,6 +1620,8 @@ plist_fragment(
          <string>{telegram_bundle_id}.cleanup</string>
          <string>{telegram_bundle_id}.upload.*</string>
      </array>
@@ -29,7 +29,7 @@ index 1ac8279b..f1d3f079 100644
      <key>CFBundleAllowMixedLocalizations</key>
      <true/>
      <key>CFBundleDevelopmentRegion</key>
-@@ -1915,6 +1921,9 @@ ios_application(
+@@ -1840,6 +1846,9 @@ ios_application(
          "//conditions:default": ":Telegram_xcode_profile" if telegram_use_xcode_managed_codesigning else "@build_configuration//provisioning:Telegram.mobileprovision",
      }),
      entitlements = ":TelegramEntitlements.entitlements",
@@ -41,7 +41,7 @@ index 1ac8279b..f1d3f079 100644
          ":BuildNumberInfoPlist",
 diff --git a/Telegram/WidgetKitWidget/AyoCallLiveActivity.swift b/Telegram/WidgetKitWidget/AyoCallLiveActivity.swift
 new file mode 100644
-index 00000000..e7cfc5a1
+index 000000000..e7cfc5a1a
 --- /dev/null
 +++ b/Telegram/WidgetKitWidget/AyoCallLiveActivity.swift
 @@ -0,0 +1,152 @@
@@ -198,10 +198,10 @@ index 00000000..e7cfc5a1
 +#endif
 +#endif
 diff --git a/Telegram/WidgetKitWidget/TodayViewController.swift b/Telegram/WidgetKitWidget/TodayViewController.swift
-index 4e3c8389..f0c77e38 100644
+index 118ae440a..3a53708bc 100644
 --- a/Telegram/WidgetKitWidget/TodayViewController.swift
 +++ b/Telegram/WidgetKitWidget/TodayViewController.swift
-@@ -928,7 +928,9 @@ struct Static_AvatarsWidget: Widget {
+@@ -929,7 +929,9 @@ struct Static_AvatarsWidget: Widget {
  @main
  struct AllWidgetsEntryPoint {
      static func main() {
@@ -212,7 +212,7 @@ index 4e3c8389..f0c77e38 100644
              AllWidgets.main()
          } else {
              preconditionFailure()
-@@ -944,6 +946,16 @@ struct AllWidgets: WidgetBundle {
+@@ -945,6 +947,16 @@ struct AllWidgets: WidgetBundle {
     }
  }
  
@@ -231,7 +231,7 @@ index 4e3c8389..f0c77e38 100644
  @main
 diff --git a/submodules/AccountContext/Sources/AyoHooks.swift b/submodules/AccountContext/Sources/AyoHooks.swift
 new file mode 100644
-index 00000000..b63a7510
+index 000000000..b63a75105
 --- /dev/null
 +++ b/submodules/AccountContext/Sources/AyoHooks.swift
 @@ -0,0 +1,8 @@
@@ -244,7 +244,7 @@ index 00000000..b63a7510
 +    public static var makeSettingsController: ((AccountContext) -> ViewController)?
 +}
 diff --git a/submodules/AccountUtils/Sources/AccountUtils.swift b/submodules/AccountUtils/Sources/AccountUtils.swift
-index 44d09f56..2a3cbabb 100644
+index 44d09f560..2a3cbabb4 100644
 --- a/submodules/AccountUtils/Sources/AccountUtils.swift
 +++ b/submodules/AccountUtils/Sources/AccountUtils.swift
 @@ -4,8 +4,8 @@ import TelegramCore
@@ -260,7 +260,7 @@ index 44d09f56..2a3cbabb 100644
      let sharedContext = context.sharedContext
 diff --git a/submodules/AyoCallActivity/BUILD b/submodules/AyoCallActivity/BUILD
 new file mode 100644
-index 00000000..c31dac08
+index 000000000..c31dac081
 --- /dev/null
 +++ b/submodules/AyoCallActivity/BUILD
 @@ -0,0 +1,32 @@
@@ -298,7 +298,7 @@ index 00000000..c31dac08
 +)
 diff --git a/submodules/AyoCallActivity/Shim/AyoAppIntentsShim.m b/submodules/AyoCallActivity/Shim/AyoAppIntentsShim.m
 new file mode 100644
-index 00000000..977391bb
+index 000000000..977391bb3
 --- /dev/null
 +++ b/submodules/AyoCallActivity/Shim/AyoAppIntentsShim.m
 @@ -0,0 +1,11 @@
@@ -315,7 +315,7 @@ index 00000000..977391bb
 +@end
 diff --git a/submodules/AyoCallActivity/Sources/AyoCallActivity.swift b/submodules/AyoCallActivity/Sources/AyoCallActivity.swift
 new file mode 100644
-index 00000000..588e3389
+index 000000000..588e33890
 --- /dev/null
 +++ b/submodules/AyoCallActivity/Sources/AyoCallActivity.swift
 @@ -0,0 +1,115 @@
@@ -435,18 +435,17 @@ index 00000000..588e3389
 +}
 +#endif
 diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
-index 1ef2cfaf..3f9ec5b6 100644
+index 1a55ea8c9..1746e27bc 100644
 --- a/submodules/ChatListUI/Sources/ChatListController.swift
 +++ b/submodules/ChatListUI/Sources/ChatListController.swift
-@@ -6871,6 +6871,20 @@ private final class ChatListLocationContext {
-     var proxyButton: NavigationBarComponent.Button?
-     var storyButton: NavigationBarComponent.Button?
+@@ -6835,6 +6835,19 @@ private final class ChatListLocationContext {
+     var proxyButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
+     var storyButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
      
 +    // Ayo: quick access to Ayo settings from the main chat list
-+    private lazy var ayoSettingsButton: NavigationBarComponent.Button = NavigationBarComponent.Button(id: "ayoSettings",
++    private lazy var ayoSettingsButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment> = AnyComponentWithIdentity(id: "ayoSettings", component: AnyComponent(NavigationButtonComponent(
 +        content: .icon(imageName: "Chat List/AyoSettingsIcon"),
-+        tint: .accent,
-+        action: { [weak self] _ in
++        pressed: { [weak self] _ in
 +            guard let self, let parentController = self.parentController else {
 +                return
 +            }
@@ -454,12 +453,12 @@ index 1ef2cfaf..3f9ec5b6 100644
 +                parentController.push(controller)
 +            }
 +        }
-+    )
++    )))
 +    
-     var rightButtons: [NavigationBarComponent.Button] {
-         var result: [NavigationBarComponent.Button] = []
+     var rightButtons: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] {
+         var result: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] = []
          if let rightButton = self.rightButton {
-@@ -6879,6 +6893,9 @@ private final class ChatListLocationContext {
+@@ -6843,6 +6856,9 @@ private final class ChatListLocationContext {
          if let storyButton = self.storyButton {
              result.append(storyButton)
          }
@@ -470,7 +469,7 @@ index 1ef2cfaf..3f9ec5b6 100644
              result.append(proxyButton)
          }
 diff --git a/submodules/Display/Source/Font.swift b/submodules/Display/Source/Font.swift
-index e53d8ae6..3ca99153 100644
+index e53d8ae64..8104a7b4b 100644
 --- a/submodules/Display/Source/Font.swift
 +++ b/submodules/Display/Source/Font.swift
 @@ -1,6 +1,54 @@
@@ -479,7 +478,7 @@ index e53d8ae6..3ca99153 100644
  
 +
 +// Ayo: user-selected app font (Ayo settings → Оформление). Read once; changes apply after restart.
-+private var ayoAppFontName: String { return UserDefaults.standard.string(forKey: "ayo.appFont") ?? "" }
++private let ayoAppFontName: String = UserDefaults.standard.string(forKey: "ayo.appFont") ?? ""
 +
 +func ayoCustomFont(size: CGFloat, weight: UIFont.Weight, italic: Bool = false, monospacedNumbers: Bool = false) -> UIFont? {
 +    if ayoAppFontName.isEmpty {
@@ -581,7 +580,7 @@ index e53d8ae6..3ca99153 100644
      }
      
 diff --git a/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift b/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
-index 914fb6d8..eef4b415 100644
+index 914fb6d8f..eef4b4155 100644
 --- a/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
 +++ b/submodules/ScreenCaptureDetection/Sources/ScreenCaptureDetection.swift
 @@ -87,7 +87,18 @@ private final class ScreenshotNotificationObserver {
@@ -605,7 +604,7 @@ index 914fb6d8..eef4b415 100644
              subscriber.putNext(.still)
 diff --git a/submodules/SettingsUI/Sources/AyoAppearanceController.swift b/submodules/SettingsUI/Sources/AyoAppearanceController.swift
 new file mode 100644
-index 00000000..9a6c940a
+index 000000000..9a6c940ab
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/AyoAppearanceController.swift
 @@ -0,0 +1,316 @@
@@ -927,7 +926,7 @@ index 00000000..9a6c940a
 +}
 diff --git a/submodules/SettingsUI/Sources/AyoSettingsController.swift b/submodules/SettingsUI/Sources/AyoSettingsController.swift
 new file mode 100644
-index 00000000..d7f5fa05
+index 000000000..d7f5fa05f
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/AyoSettingsController.swift
 @@ -0,0 +1,357 @@
@@ -1289,7 +1288,7 @@ index 00000000..d7f5fa05
 +    }, select: { _, _ in })
 +}
 diff --git a/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift b/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
-index 588fc00b..34666817 100644
+index 588fc00b2..346668170 100644
 --- a/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
 +++ b/submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift
 @@ -201,15 +201,15 @@ public func deleteAccountOptionsController(context: AccountContext, navigationCo
@@ -1312,7 +1311,7 @@ index 588fc00b..34666817 100644
                      count += 1
                  }
 diff --git a/submodules/SettingsUI/Sources/LogoutOptionsController.swift b/submodules/SettingsUI/Sources/LogoutOptionsController.swift
-index a884524f..749cf0c0 100644
+index a884524f2..749cf0c09 100644
 --- a/submodules/SettingsUI/Sources/LogoutOptionsController.swift
 +++ b/submodules/SettingsUI/Sources/LogoutOptionsController.swift
 @@ -142,15 +142,15 @@ public func logoutOptionsController(context: AccountContext, navigationControlle
@@ -1334,13 +1333,144 @@ index a884524f..749cf0c0 100644
                      }
                      count += 1
                  }
+diff --git a/submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift b/submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift
+index 5adbc88ba..0038a6a15 100644
+--- a/submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift
++++ b/submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift
+@@ -44,6 +44,7 @@ private final class ThemeSettingsControllerArguments {
+     let editTheme: (PresentationCloudTheme) -> Void
+     let themeContextAction: (Bool, PresentationThemeReference, ASDisplayNode, ContextGesture?) -> Void
+     let colorContextAction: (Bool, PresentationThemeReference, ThemeSettingsColorOption?, ASDisplayNode, ContextGesture?) -> Void
++    var openAyoAppearance: () -> Void = {}
+     
+     init(
+         context: AccountContext,
+@@ -131,6 +132,7 @@ private enum ThemeSettingsControllerEntry: ItemListNodeEntry {
+     case autoNightTheme(PresentationTheme, String, String)
+     case textSize(PresentationTheme, String, String)
+     case bubbleSettings(PresentationTheme, String, String)
++    case ayoAppearance(PresentationTheme)
+     case iconHeader(PresentationTheme, String)
+     case iconItem(PresentationTheme, PresentationStrings, [PresentationAppIcon], Bool, String?)
+     case powerSaving
+@@ -146,7 +148,7 @@ private enum ThemeSettingsControllerEntry: ItemListNodeEntry {
+                 return ThemeSettingsControllerSection.chatPreview.rawValue
+             case .autoNight, .autoNightTheme:
+                 return ThemeSettingsControllerSection.nightMode.rawValue
+-            case .textSize, .bubbleSettings:
++            case .textSize, .bubbleSettings, .ayoAppearance:
+                 return ThemeSettingsControllerSection.message.rawValue
+             case .iconHeader, .iconItem:
+                 return ThemeSettingsControllerSection.icon.rawValue
+@@ -162,39 +164,41 @@ private enum ThemeSettingsControllerEntry: ItemListNodeEntry {
+         case .themeListHeader:
+             return 0
+         case .chatPreview:
+-            return 1
++            return 10
+         case .themes:
+-            return 2
++            return 20
+         case .chatTheme:
+-            return 3
++            return 30
+         case .wallpaper:
+-            return 4
++            return 40
+         case .nameColor:
+-            return 5
++            return 50
+         case .autoNight:
+-            return 6
++            return 60
+         case .autoNightTheme:
+-            return 7
++            return 70
+         case .textSize:
+-            return 8
++            return 80
++        case .ayoAppearance:
++            return 75
+         case .bubbleSettings:
+-            return 9
++            return 90
+         case .powerSaving:
+-            return 10
++            return 100
+         case .stickersAndEmoji:
+-            return 11
++            return 110
+         case .iconHeader:
+-            return 12
++            return 120
+         case .iconItem:
+-            return 13
++            return 130
+         case .otherHeader:
+-            return 14
++            return 140
+         case .sendWithCmdEnter:
+-            return 15
++            return 150
+         case .showNextMediaOnTap:
+-            return 16
++            return 160
+         case .showNextMediaOnTapInfo:
+-            return 17
++            return 170
+         }
+     }
+     
+@@ -248,6 +252,12 @@ private enum ThemeSettingsControllerEntry: ItemListNodeEntry {
+                 } else {
+                     return false
+                 }
++            case let .ayoAppearance(lhsTheme):
++                if case let .ayoAppearance(rhsTheme) = rhs, lhsTheme === rhsTheme {
++                    return true
++                } else {
++                    return false
++                }
+             case let .bubbleSettings(lhsTheme, lhsText, lhsValue):
+                 if case let .bubbleSettings(rhsTheme, rhsText, rhsValue) = rhs, lhsTheme === rhsTheme, lhsText == rhsText, lhsValue == rhsValue {
+                     return true
+@@ -362,6 +372,10 @@ private enum ThemeSettingsControllerEntry: ItemListNodeEntry {
+                 return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: nil, title: text, label: value, labelStyle: .text, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
+                     arguments.openTextSize()
+                 })
++            case .ayoAppearance:
++                return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: PresentationResourcesSettings.ayoSettings, title: "Оформление Ayo: цвета, форма, шрифт", label: "", labelStyle: .text, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
++                    arguments.openAyoAppearance()
++                })
+             case let .bubbleSettings(_, text, value):
+                 return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: nil, title: text, label: value, labelStyle: .text, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
+                     arguments.openBubbleSettings()
+@@ -477,6 +491,7 @@ private func themeSettingsControllerEntries(
+             textSizeValue = "\(Int(presentationThemeSettings.fontSize.baseDisplaySize))pt / \(Int(presentationThemeSettings.listsFontSize.baseDisplaySize))pt"
+         }
+     }
++    entries.append(.ayoAppearance(presentationData.theme))
+     entries.append(.textSize(presentationData.theme, strings.Appearance_TextSizeSetting, textSizeValue))
+     entries.append(.bubbleSettings(presentationData.theme, strings.Appearance_BubbleCornersSetting, ""))
+     entries.append(.powerSaving)
+@@ -1091,6 +1106,10 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
+         })
+     })
+ 
++    arguments.openAyoAppearance = {
++        pushControllerImpl?(ayoAppearanceController(context: context))
++    }
++    
+     let signal = combineLatest(
+         queue: .mainQueue(),
+         context.sharedContext.presentationData,
 diff --git a/submodules/TelegramCallsUI/BUILD b/submodules/TelegramCallsUI/BUILD
-index 56178cf9..960d600b 100644
+index b7cc6371c..781d4e480 100644
 --- a/submodules/TelegramCallsUI/BUILD
 +++ b/submodules/TelegramCallsUI/BUILD
 @@ -58,6 +58,7 @@ swift_library(
          "//submodules/SSignalKit/SSignalKit",
-         "//submodules/Postbox:Postbox",
+         "//submodules/LottieSettings:LottieSettings",
      	"//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
 +        "//submodules/AyoCallActivity:AyoCallActivity",
          "//submodules/Display:Display",
@@ -1348,7 +1478,7 @@ index 56178cf9..960d600b 100644
          "//submodules/TelegramUIPreferences:TelegramUIPreferences",
 diff --git a/submodules/TelegramCallsUI/Sources/AyoCallLiveActivityManager.swift b/submodules/TelegramCallsUI/Sources/AyoCallLiveActivityManager.swift
 new file mode 100644
-index 00000000..3b682305
+index 000000000..3b6823052
 --- /dev/null
 +++ b/submodules/TelegramCallsUI/Sources/AyoCallLiveActivityManager.swift
 @@ -0,0 +1,131 @@
@@ -1484,10 +1614,10 @@ index 00000000..3b682305
 +    return result.isEmpty ? "?" : result
 +}
 diff --git a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift b/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
-index 1d4c5dae..d5173ff0 100644
+index 1866a2429..916759e56 100644
 --- a/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
 +++ b/submodules/TelegramCallsUI/Sources/PresentationCallManager.swift
-@@ -54,6 +54,8 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+@@ -55,6 +55,8 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
      private let audioSession: ManagedAudioSession
      private let callKitIntegration: CallKitIntegration?
      
@@ -1496,7 +1626,7 @@ index 1d4c5dae..d5173ff0 100644
      private var currentCallValue: PresentationCallImpl?
      private var currentCall: PresentationCallImpl? {
          return self.currentCallValue
-@@ -712,6 +714,7 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
+@@ -713,6 +715,7 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
          
          if self.currentCallValue !== value {
              self.currentCallValue = value
@@ -1505,10 +1635,10 @@ index 1d4c5dae..d5173ff0 100644
              self.callToConferenceDisposable?.dispose()
              self.callToConferenceDisposable = nil
 diff --git a/submodules/TelegramCore/Sources/Account/AccountManager.swift b/submodules/TelegramCore/Sources/Account/AccountManager.swift
-index c3c37c55..89bdedcd 100644
+index a59eefd11..0aac7c699 100644
 --- a/submodules/TelegramCore/Sources/Account/AccountManager.swift
 +++ b/submodules/TelegramCore/Sources/Account/AccountManager.swift
-@@ -266,6 +266,12 @@ public func performAppGroupUpgrades(appGroupPath: String, rootPath: String) {
+@@ -265,6 +265,12 @@ public func performAppGroupUpgrades(appGroupPath: String, rootPath: String) {
      DispatchQueue.global(qos: .default).async {
          let _ = try? FileManager.default.createDirectory(at: URL(fileURLWithPath: rootPath), withIntermediateDirectories: true, attributes: nil)
  
@@ -1523,7 +1653,7 @@ index c3c37c55..89bdedcd 100644
                  "telegram-data",
 diff --git a/submodules/TelegramCore/Sources/AyuMessageHistory.swift b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
 new file mode 100644
-index 00000000..7883af7d
+index 000000000..7883af7d5
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
 @@ -0,0 +1,176 @@
@@ -1705,7 +1835,7 @@ index 00000000..7883af7d
 +}
 diff --git a/submodules/TelegramCore/Sources/AyuSettings.swift b/submodules/TelegramCore/Sources/AyuSettings.swift
 new file mode 100644
-index 00000000..4392c274
+index 000000000..4392c274f
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuSettings.swift
 @@ -0,0 +1,169 @@
@@ -1878,11 +2008,83 @@ index 00000000..4392c274
 +        }
 +    }
 +}
+diff --git a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+index ba4569edf..0479bfa4c 100644
+--- a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
++++ b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+@@ -4501,7 +4501,7 @@ func replayFinalState(
+                                         transaction.updatePeerCachedData(peerIds: [message.id.peerId], update: { peerId, current in
+                                             if let previous = current as? CachedUserData {
+                                                 var updatedFlags = previous.flags
+-                                                if newValue {
++                                                if newValue && !AyuSettings.bypassCopyProtection {
+                                                     updatedFlags.insert(.copyProtectionEnabled)
+                                                 } else {
+                                                     updatedFlags.remove(.copyProtectionEnabled)
+@@ -4597,18 +4597,30 @@ func replayFinalState(
+             case let .DeleteEphemeralMessages(peerId, ids):
+                 deleteEphemeralMessages(transaction: transaction, peerId: peerId, ids: ids)
+             case let .DeleteMessagesWithGlobalIds(ids):
+-                var resourceIds: [MediaResourceId] = []
+-                transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+-                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+-                })
+-                if !resourceIds.isEmpty {
+-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++                if AyuSettings.keepDeletedMessages {
++                    // Ayo: keep messages deleted by the other side, only mark them as deleted
++                    let _ = ayoKeepDeletedMessages(transaction: transaction, ids: transaction.messageIdsForGlobalIds(ids))
++                } else {
++                    var resourceIds: [MediaResourceId] = []
++                    transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
++                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
++                    })
++                    if !resourceIds.isEmpty {
++                        let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++                    }
+                 }
+                 deletedMessageIds.append(contentsOf: ids.map { .global($0) })
+             case let .DeleteMessages(ids):
+-                _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+-                    addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+-                })
++                var idsToDelete = ids
++                if AyuSettings.keepDeletedMessages {
++                    // Ayo: keep messages deleted by the other side, only mark them as deleted
++                    idsToDelete = ayoKeepDeletedMessages(transaction: transaction, ids: ids)
++                }
++                if !idsToDelete.isEmpty {
++                    _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
++                        addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
++                    })
++                }
+                 deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
+             case let .UpdateMinAvailableMessage(id):
+                 if let message = transaction.getMessage(id) {
+@@ -4645,6 +4657,18 @@ func replayFinalState(
+             case let .EditMessage(id, message):
+                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+                 transaction.updateMessage(id, update: { previousMessage in
++                    if AyuSettings.keepEditHistory && previousMessage.text != message.text && !previousMessage.text.isEmpty {
++                        // Ayo: remember the previous text together with the time it was written
++                        var previousDate = previousMessage.timestamp
++                        if let editedAttribute = previousMessage.attributes.first(where: { $0 is EditedMessageAttribute }) as? EditedMessageAttribute {
++                            previousDate = editedAttribute.date
++                        }
++                        AyuMessageHistory.shared.recordEdit(id, previousText: previousMessage.text, date: previousDate)
++                        if AyuSettings.notifyDeletedEdited && ayoShouldNotify(previousMessage) {
++                            let name = previousMessage.author?.debugDisplayTitle ?? ""
++                            ayoPostNotification(title: "✏️ \(name) изменил(а) сообщение", body: "Было: \(ayoPreviewText(previousMessage.text))\nСтало: \(ayoPreviewText(message.text))")
++                        }
++                    }
+                     var updatedFlags = message.flags
+                     var updatedLocalTags = message.localTags
+                     var updatedAttributes = message.attributes
 diff --git a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
-index 3dc6c7d5..cedd6b9b 100644
+index 23b2cfdf4..49ec19a17 100644
 --- a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
 +++ b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
-@@ -992,7 +992,10 @@ private func validateBatch(postbox: Postbox, network: Network, transaction: Tran
+@@ -984,7 +984,10 @@ private func validateBatch(postbox: Postbox, network: Network, transaction: Tran
                                          return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: updatedTags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
                                      })
                                  } else {
@@ -1894,7 +2096,7 @@ index 3dc6c7d5..cedd6b9b 100644
                                      Logger.shared.log("HistoryValidation", "deleting message \(id) in \(id.peerId)")
                                  }
                              }
-@@ -1175,7 +1178,10 @@ private func validateReplyThreadBatch(postbox: Postbox, network: Network, transa
+@@ -1167,7 +1170,10 @@ private func validateReplyThreadBatch(postbox: Postbox, network: Network, transa
                  
                      for id in removedMessageIds {
                          if !validMessageIds.contains(id) {
@@ -1907,7 +2109,7 @@ index 3dc6c7d5..cedd6b9b 100644
                          }
                      }
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
-index 7256668b..9edf97a0 100644
+index 8c8a4fa31..211f64101 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 +++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 @@ -53,7 +53,7 @@ private final class AccountPresenceManagerImpl {
@@ -1920,7 +2122,7 @@ index 7256668b..9edf97a0 100644
              self.onlineTimer?.invalidate()
              self.onlineTimer = nil
 diff --git a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
-index e8e08874..35b137a2 100644
+index 7acc37a1e..bd2bce737 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
 +++ b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
 @@ -142,6 +142,9 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
@@ -1933,76 +2135,11 @@ index e8e08874..35b137a2 100644
      return postbox.transaction { transaction -> Signal<Void, NoError> in
          if let peer = transaction.getPeer(peerId) {
              if peerId == accountPeerId {
-diff --git a/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift b/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
-index cf1ab15d..a523194d 100644
---- a/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
-+++ b/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
-@@ -274,20 +274,32 @@ extension ReplayContext {
-     }
-     
-     func applyDeleteMessagesWithGlobalIds(_ ids: [Int32]) {
--        var resourceIds: [MediaResourceId] = []
--        transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
--            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
--        })
--        if !resourceIds.isEmpty {
--            let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
-+        if AyuSettings.keepDeletedMessages {
-+            // Ayo: keep messages deleted by the other side, only mark them as deleted
-+            let _ = ayoKeepDeletedMessages(transaction: transaction, ids: transaction.messageIdsForGlobalIds(ids))
-+        } else {
-+            var resourceIds: [MediaResourceId] = []
-+            transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
-+                addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-+            })
-+            if !resourceIds.isEmpty {
-+                let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
-+            }
-         }
-         deletedMessageIds.append(contentsOf: ids.map { .global($0) })
-     }
-     
-     func applyDeleteMessages(_ ids: [MessageId]) {
--        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
--            self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
--        })
-+        var idsToDelete = ids
-+        if AyuSettings.keepDeletedMessages {
-+            // Ayo: keep messages deleted by the other side, only mark them as deleted
-+            idsToDelete = ayoKeepDeletedMessages(transaction: transaction, ids: ids)
-+        }
-+        if !idsToDelete.isEmpty {
-+            _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
-+                self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
-+            })
-+        }
-         deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
-     }
-     
-@@ -307,6 +319,18 @@ extension ReplayContext {
-     func applyEditMessage(_ id: MessageId, _ message: StoreMessage) {
-         var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
-         transaction.updateMessage(id, update: { previousMessage in
-+            if AyuSettings.keepEditHistory && previousMessage.text != message.text && !previousMessage.text.isEmpty {
-+                // Ayo: remember the previous text together with the time it was written
-+                var previousDate = previousMessage.timestamp
-+                if let editedAttribute = previousMessage.attributes.first(where: { $0 is EditedMessageAttribute }) as? EditedMessageAttribute {
-+                    previousDate = editedAttribute.date
-+                }
-+                AyuMessageHistory.shared.recordEdit(id, previousText: previousMessage.text, date: previousDate)
-+                if AyuSettings.notifyDeletedEdited && ayoShouldNotify(previousMessage) {
-+                    let name = previousMessage.author?.debugDisplayTitle ?? ""
-+                    ayoPostNotification(title: "✏️ \(name) изменил(а) сообщение", body: "Было: \(ayoPreviewText(previousMessage.text))\nСтало: \(ayoPreviewText(message.text))")
-+                }
-+            }
-             let peers: [PeerId:Peer] = previousMessage.peers.reduce([:], { current, value in
-                 var current = current
-                 current[value.0] = value.1
 diff --git a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
-index b2e65895..7ec705ad 100644
+index 1b8617d22..3b05457b5 100644
 --- a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
 +++ b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
-@@ -252,6 +252,10 @@ private func validatePeerReadState(network: Network, postbox: Postbox, stateMana
+@@ -247,6 +247,10 @@ private func validatePeerReadState(network: Network, postbox: Postbox, stateMana
  }
  
  private func pushPeerReadState(network: Network, postbox: Postbox, stateManager: AccountStateManager, peerId: PeerId, readState: PeerReadState) -> Signal<PeerReadState, PeerReadStateValidationError> {
@@ -2014,7 +2151,7 @@ index b2e65895..7ec705ad 100644
          // Decide whether a request is needed before looking the peer up: inputSecretChat goes
          // through loadedPeerWithId, which never emits when the peer row is missing and fails
 diff --git a/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift b/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
-index 4aaa1a66..b635fa3f 100644
+index 4aaa1a664..b635fa3f6 100644
 --- a/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
 +++ b/submodules/TelegramCore/Sources/State/UserLimitsConfiguration.swift
 @@ -187,5 +187,19 @@ extension UserLimitsConfiguration {
@@ -2038,7 +2175,7 @@ index 4aaa1a66..b635fa3f 100644
      }
  }
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
-index a8e5b04b..a05e93b8 100644
+index 8c48207f8..566b62632 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
 +++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
 @@ -635,6 +635,9 @@ public class AdMessagesHistoryContext {
@@ -2052,7 +2189,7 @@ index a8e5b04b..a05e93b8 100644
              let disposable = MetaDisposable()
              
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
-index aa11e522..dd5bbb3a 100644
+index aa11e5220..dd5bbb3a3 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
 +++ b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
 @@ -57,7 +57,7 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
@@ -2065,7 +2202,7 @@ index aa11e522..dd5bbb3a 100644
              } else {
                  if let index = itemIds.firstIndex(of: itemId) {
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift b/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
-index 9e71173b..890af2f2 100644
+index d42e9b044..10badd5b2 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
 +++ b/submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift
 @@ -315,7 +315,7 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
@@ -2078,7 +2215,7 @@ index 9e71173b..890af2f2 100644
                                      
                                          var flags: CachedUserFlags = previous.flags
 diff --git a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
-index 5e2bce1e..d2714adc 100644
+index b7c6ae8cb..b0516e89b 100644
 --- a/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
 +++ b/submodules/TelegramCore/Sources/Utils/MessageUtils.swift
 @@ -536,6 +536,9 @@ public extension Message {
@@ -2092,10 +2229,10 @@ index 5e2bce1e..d2714adc 100644
              return true
          } else if let group = self.peers[self.id.peerId] as? TelegramGroup, group.flags.contains(.copyProtectionEnabled) {
 diff --git a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
-index ef64c4b8..af724ab9 100644
+index 26cebdb4c..73c35556e 100644
 --- a/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
 +++ b/submodules/TelegramCore/Sources/Utils/PeerUtils.swift
-@@ -270,6 +270,9 @@ public extension Peer {
+@@ -252,6 +252,9 @@ public extension Peer {
      }
      
      var isCopyProtectionEnabled: Bool {
@@ -2107,7 +2244,7 @@ index ef64c4b8..af724ab9 100644
              return group.flags.contains(.copyProtectionEnabled)
 diff --git a/submodules/TelegramPresentationData/Sources/AyoAppearance.swift b/submodules/TelegramPresentationData/Sources/AyoAppearance.swift
 new file mode 100644
-index 00000000..462dbcef
+index 000000000..462dbcef9
 --- /dev/null
 +++ b/submodules/TelegramPresentationData/Sources/AyoAppearance.swift
 @@ -0,0 +1,56 @@
@@ -2168,14 +2305,15 @@ index 00000000..462dbcef
 +    return luminance > 0.62 ? UIColor.black : UIColor.white
 +}
 diff --git a/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift b/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift
-index 77fbbdd7..f6f12a18 100644
+index 6da2641fe..1027d986f 100644
 --- a/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift
 +++ b/submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift
-@@ -84,7 +84,24 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
-     return messageBubbleImage(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius, incoming: incoming, fillColor: fillColor, strokeColor: strokeColor, neighbors: neighbors, shadow: bubbleColors.bubble.withWallpaper.shadow, wallpaper: wallpaper, knockout: knockoutValue, mask: mask, extendedEdges: extendedEdges, onlyOutline: onlyOutline, onlyShadow: onlyShadow, alwaysFillColor: alwaysFillColor, tail: tail)
+@@ -84,7 +84,25 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
+     return messageBubbleImage(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius, incoming: incoming, fillColor: fillColor, strokeColor: strokeColor, neighbors: neighbors, shadow: bubbleColors.bubble.withWallpaper.shadow, wallpaper: wallpaper, knockout: knockoutValue, mask: mask, extendedEdges: extendedEdges, onlyOutline: onlyOutline, onlyShadow: onlyShadow, alwaysFillColor: alwaysFillColor)
  }
  
-+// Ayo: bubble shape (Ayo settings): 0 = default, 1 = no tail, 2 = equal corners, 3 = rectangular.
++// Ayo: bubble shape (Ayo settings → Оформление): 0 = default, 1 = no tail,
++// 2 = equal corners (no tail), 3 = rectangular (no tail).
 +private func ayoBubbleShape(maxCornerRadius: CGFloat, minCornerRadius: CGFloat) -> (max: CGFloat, min: CGFloat, noTail: Bool) {
 +    switch AyuSettings.bubbleShape {
 +    case 1:
@@ -2196,7 +2334,7 @@ index 77fbbdd7..f6f12a18 100644
      var topLeftRadius: CGFloat
      var topRightRadius: CGFloat
      var bottomLeftRadius: CGFloat
-@@ -139,11 +156,17 @@ public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CG
+@@ -139,16 +157,22 @@ public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CG
          bottomRightRadius = bottomLeftRadius
          bottomLeftRadius = tmp
      }
@@ -2207,41 +2345,46 @@ index 77fbbdd7..f6f12a18 100644
      return (topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, drawTail)
  }
  
- public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, shadow: PresentationThemeBubbleShadow?, wallpaper: TelegramWallpaper, knockout knockoutValue: Bool, mask: Bool = false, extendedEdges: Bool = false, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false, tail: Bool = true) -> UIImage {
+ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, shadow: PresentationThemeBubbleShadow?, wallpaper: TelegramWallpaper, knockout knockoutValue: Bool, mask: Bool = false, extendedEdges: Bool = false, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false) -> UIImage {
 +    let ayoShape = ayoBubbleShape(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius)
 +    let maxCornerRadius = ayoShape.max
 +    let minCornerRadius = ayoShape.min
      let topLeftRadius: CGFloat
      let topRightRadius: CGFloat
      let bottomLeftRadius: CGFloat
-@@ -193,6 +216,9 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
+     let bottomRightRadius: CGFloat
+-    let drawTail: Bool
++    var drawTail: Bool
+     
+     switch neighbors {
+     case .none:
+@@ -189,6 +213,10 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
          drawTail = false
      }
      
 +    if ayoShape.noTail {
 +        drawTail = false
 +    }
++    
      let fixedMainDiameter: CGFloat = 33.0
      let innerSize = CGSize(width: fixedMainDiameter + 6.0, height: fixedMainDiameter)
      let strokeInset: CGFloat = 1.0
 diff --git a/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift b/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
-index bbf371fc..1a6bd2fd 100644
+index 3f0398e98..d1962d882 100644
 --- a/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
 +++ b/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
-@@ -168,7 +168,7 @@ public func makePresentationTheme(mediaBox: MediaBox, themeReference: Presentati
+@@ -130,5 +130,5 @@ public func makePresentationTheme(mediaBox: MediaBox, themeReference: Presentati
                  return nil
              }
      }
 -    return theme
 +    return ayoApplyAppearance(theme)
  }
- 
- /// The theme with bubble mode off, built once from the mode's own theme choice and recoloured for the plain page. Both
 diff --git a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
-index 4f127c17..a02e4340 100644
+index 75135098b..81cdbf7e2 100644
 --- a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
 +++ b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
-@@ -130,6 +130,7 @@ public struct PresentationResourcesSettings {
+@@ -129,6 +129,7 @@ public struct PresentationResourcesSettings {
      public static let appearance = renderSettingsIcon(name: "Item List/Icons/Appearance", backgroundColors: [colorLightBlue])
      public static let language = renderSettingsIcon(name: "Item List/Icons/Language", backgroundColors: [colorPurple])
      public static let powerSaving = renderSettingsIcon(name: "Item List/Icons/PowerSaving", backgroundColors: [colorOrange])
@@ -2250,10 +2393,10 @@ index 4f127c17..a02e4340 100644
      public static let myProfile = renderSettingsIcon(name: "Item List/Icons/Profile", backgroundColors: [colorRed])
      
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
-index 50540f7a..3f139393 100644
+index 7a8602b3e..38294eaa2 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
-@@ -4423,6 +4423,12 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
+@@ -3962,6 +3962,12 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
          strongSelf.contentContainersWrapperNode.frame = CGRect(origin: CGPoint(), size: layout.contentSize)
          
          strongSelf.appliedItem = item
@@ -2267,10 +2410,10 @@ index 50540f7a..3f139393 100644
          strongSelf.updateAccessibilityData(accessibilityData)
          strongSelf.disablesComments = disablesComments
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
-index bf71cb20..c0a6ad25 100644
+index ad79b915c..9cdb6caef 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
-@@ -163,7 +163,7 @@ public func stringForMessageTimestampStatus(
+@@ -107,7 +107,7 @@ public func stringForMessageTimestampStatus(
          timestamp = orignalDate
      }
      
@@ -2279,7 +2422,7 @@ index bf71cb20..c0a6ad25 100644
      if timestamp == scheduleWhenOnlineTimestamp {
          dateText = "         "
      }
-@@ -258,5 +258,10 @@ public func stringForMessageTimestampStatus(
+@@ -251,5 +251,10 @@ public func stringForMessageTimestampStatus(
          }
      }
      
@@ -2291,10 +2434,10 @@ index bf71cb20..c0a6ad25 100644
      return dateText
  }
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
-index 7f64f67d..730f3a5c 100644
+index 21291a568..013a97429 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
-@@ -1720,7 +1720,12 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
+@@ -1663,7 +1663,12 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                              let progress = max(0.0, min(1.0, progress))
                              let compactString = dataSizeString(Int(Float(size) * progress), forceDecimal: true, formatting: DataSizeStringFormatting(chatPresentationData: presentationData))
                              let descriptionFont = Font.with(size: floor(presentationData.fontSize.baseDisplaySize * 13.0 / 17.0), design: .regular, weight: .regular, traits: [.monospacedNumbers])
@@ -2308,11 +2451,27 @@ index 7f64f67d..730f3a5c 100644
                          }
                      default:
                          break
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift
+index 224e029c9..2931cc3ef 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift
+@@ -2937,6 +2937,11 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
+                     }
+             }
+         }
++        // Ayo: upload percentage for outgoing media that is still being sent
++        if AyuSettings.showUploadProgress, let currentMessage = self.message, currentMessage.flags.contains(.Unsent), !currentMessage.flags.contains(.Failed), let currentFetchStatus = self.fetchStatus, case let .Fetching(_, uploadProgress) = currentFetchStatus, uploadProgress < 1.0 {
++            badgeContent = .text(inset: 0.0, backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, text: NSAttributedString(string: "\(Int(uploadProgress * 100.0))%"), iconName: nil)
++        }
++        
+         if isPreview, let file = media as? TelegramMediaFile {
+             if let duration = file.duration, !file.isVideoSticker {
+                 let durationString = file.isAnimated ? gifTitle : stringForDuration(Int32(duration), position: nil)
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
-index 463ab663..638dccf4 100644
+index 71918a2f5..04953f93a 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
-@@ -193,6 +193,7 @@ enum PeerInfoSettingsSection {
+@@ -186,6 +186,7 @@ enum PeerInfoSettingsSection {
      case emojiStatus
      case profileColor
      case powerSaving
@@ -2321,10 +2480,10 @@ index 463ab663..638dccf4 100644
      case profile
      case premiumManagement
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
-index bb413618..73e6a207 100644
+index ec998735c..6de8f3d06 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
-@@ -227,15 +227,15 @@ extension PeerInfoScreenNode {
+@@ -224,15 +224,15 @@ extension PeerInfoScreenNode {
                  guard let strongSelf = self else {
                      return
                  }
@@ -2343,7 +2502,7 @@ index bb413618..73e6a207 100644
                          }
                          count += 1
                      }
-@@ -281,6 +281,8 @@ extension PeerInfoScreenNode {
+@@ -278,6 +278,8 @@ extension PeerInfoScreenNode {
              self.interaction.editingOpenNameColorSetup()
          case .powerSaving:
              push(energySavingSettingsScreen(context: self.context))
@@ -2353,10 +2512,10 @@ index bb413618..73e6a207 100644
              guard let controller = self.controller, !controller.presentAccountFrozenInfoIfNeeded() else {
                  return
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
-index 8e3f9d25..2c45a21b 100644
+index a4873696b..1887f3c78 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
-@@ -275,6 +275,10 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+@@ -270,6 +270,10 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
          interaction.openSettings(.powerSaving)
      }))
      
@@ -2368,7 +2527,7 @@ index 8e3f9d25..2c45a21b 100644
      items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 4, label: .text(languageName.isEmpty ? presentationData.strings.Localization_LanguageName : languageName), text: presentationData.strings.Settings_AppLanguage, icon: PresentationResourcesSettings.language, action: {
          interaction.openSettings(.language)
 diff --git a/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift b/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
-index dacb9983..12a00b6a 100644
+index 10b8e29b9..0ceb79569 100644
 --- a/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
 +++ b/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
 @@ -10,6 +10,18 @@ import LocalMediaResources
@@ -2377,7 +2536,7 @@ index dacb9983..12a00b6a 100644
  import Photos
 +import AVFoundation
 +
-+// Ayo: keep source frame rate (up to 60) instead of always re-encoding at 30 fps
++// Ayo: keep the source frame rate (up to 60) instead of always re-encoding at 30 fps
 +private func ayoExportFrameRate(_ asset: AVAsset?) -> Float {
 +    guard AyuSettings.unlockFrameRate, let asset, let track = asset.tracks(withMediaType: .video).first else {
 +        return 30.0
@@ -2390,29 +2549,29 @@ index dacb9983..12a00b6a 100644
  
  private final class AVURLAssetCopyItem: MediaResourceDataFetchCopyLocalItem {
      private let url: URL
-@@ -401,7 +413,7 @@ public func fetchVideoLibraryMediaResource(postbox: Postbox, resource: VideoLibr
+@@ -347,7 +359,7 @@ public func fetchVideoLibraryMediaResource(postbox: Postbox, resource: VideoLibr
                      let updatedSize = Atomic<Int64>(value: 0)
                      if let mediaEditorValues {
                          let duration: Double = avAsset.duration.seconds
--                        var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
-+                        var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: ayoExportFrameRate(avAsset))
-                         configuration.useStreamingWriter = isStory ? useStreamingStoryVideoWriter : useStreamingChatVideoWriter
+-                        let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
++                        let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: ayoExportFrameRate(avAsset))
                          let videoExport = MediaEditorVideoExport(postbox: postbox, subject: .video(asset: avAsset, isStory: isStory), configuration: configuration, outputPath: tempFile.path)
-                         let streamingHeaderEnd = Atomic<Int64>(value: 0)
-@@ -601,7 +613,7 @@ public func fetchLocalFileVideoMediaResource(postbox: Postbox, resource: LocalFi
+                         
+                         let statusDisposable = videoExport.status.start(next: { status in
+@@ -551,7 +563,7 @@ public func fetchLocalFileVideoMediaResource(postbox: Postbox, resource: LocalFi
                  return EmptyDisposable
              }
              
--            var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
-+            var configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: ayoExportFrameRate(avAsset))
-             configuration.useStreamingWriter = isStory ? useStreamingStoryVideoWriter : useStreamingChatVideoWriter
+-            let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
++            let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: isImage ? 30.0 : ayoExportFrameRate(avAsset))
              let videoExport = MediaEditorVideoExport(postbox: postbox, subject: subject, configuration: configuration, outputPath: tempFile.path)
-             let streamingHeaderEnd = Atomic<Int64>(value: 0)
+             
+             let statusDisposable = videoExport.status.start(next: { status in
 diff --git a/submodules/TelegramUI/Sources/AccountContext.swift b/submodules/TelegramUI/Sources/AccountContext.swift
-index 080872b2..e02011ea 100644
+index c4accd876..f8b0bcbd4 100644
 --- a/submodules/TelegramUI/Sources/AccountContext.swift
 +++ b/submodules/TelegramUI/Sources/AccountContext.swift
-@@ -116,6 +116,24 @@ private final class DeviceSpecificContactImportContexts {
+@@ -117,6 +117,24 @@ private final class DeviceSpecificContactImportContexts {
      }
  }
  
@@ -2437,7 +2596,7 @@ index 080872b2..e02011ea 100644
  public final class AccountContextImpl: AccountContext {
      public let sharedContextImpl: SharedAccountContextImpl
      public var sharedContext: SharedAccountContext {
-@@ -680,6 +698,11 @@ public final class AccountContextImpl: AccountContext {
+@@ -688,6 +706,11 @@ public final class AccountContextImpl: AccountContext {
                  return try await requestPasscodeAuthentication(context: self, scope: .resource(namespace: request.namespace), lifetime: request.lifetime, biometricReason: self.sharedContext.currentPresentationData.with { $0 }.strings.Wallet_AuthenticationReason, authenticateBiometrics: authenticateBiometrics)
              }
          }
@@ -2450,10 +2609,10 @@ index 080872b2..e02011ea 100644
  
      deinit {
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index cf304286..eea869b7 100644
+index 109d03ab5..00190d62f 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
-@@ -68,6 +68,23 @@ private func isTonTransferUrl(_ url: URL) -> Bool {
+@@ -70,6 +70,23 @@ private func isTonTransferUrl(_ url: URL) -> Bool {
  
  private var testIsLaunched = false
  
@@ -2477,7 +2636,7 @@ index cf304286..eea869b7 100644
  private func isKeyboardWindow(window: NSObject) -> Bool {
      let typeName = NSStringFromClass(type(of: window))
      if #available(iOS 9.0, *) {
-@@ -565,10 +582,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -559,10 +576,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
          
          let baseAppBundleId = Bundle.main.bundleIdentifier!
          let appGroupName = "group.\(baseAppBundleId)"
@@ -2499,16 +2658,16 @@ index cf304286..eea869b7 100644
          
          let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
          self.buildConfig = buildConfig
-@@ -1630,7 +1656,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
-         
-         self.maybeCheckForUpdates()
+@@ -1602,7 +1628,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         }
+         #endif
          
 -        if #available(iOS 13.0, *) {
 +        if #available(iOS 13.0, *), ayoIsBackgroundTaskPermitted("\(baseAppBundleId).cleanup") {
              let cleanupTaskId = "\(baseAppBundleId).cleanup"
              
              BGTaskScheduler.shared.register(forTaskWithIdentifier: cleanupTaskId, using: DispatchQueue.main) { task in
-@@ -3280,6 +3306,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -3190,6 +3216,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
      
      @available(iOS 10.0, *)
      func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
@@ -2517,14 +2676,14 @@ index cf304286..eea869b7 100644
 +            completionHandler([.alert, .sound])
 +            return
 +        }
-         if notification.request.content.userInfo[CallUnlockVideoNotificationState.userInfoKey] != nil {
-             completionHandler([])
-             return
+         let _ = (accountIdFromNotification(notification, sharedContext: self.sharedContextPromise.get())
+         |> deliverOnMainQueue).start(next: { accountId in
+             if let context = self.contextValue {
 diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
-index f32b3c16..4404006b 100644
+index a7f2cea0c..e0d8ab08c 100644
 --- a/submodules/TelegramUI/Sources/ChatController.swift
 +++ b/submodules/TelegramUI/Sources/ChatController.swift
-@@ -7937,7 +7937,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+@@ -7799,7 +7799,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                      // visible in the foreground, so a recording started behind a covering screen or while
                      // backgrounded is still reported once the chat comes into view.
                      if let strongSelf = self, strongSelf.isApplicationInForegroundValue, strongSelf.traceVisibility() {
@@ -2535,7 +2694,7 @@ index f32b3c16..4404006b 100644
                          return true
                      } else {
                          return false
-@@ -9108,7 +9110,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+@@ -8907,7 +8909,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
      }
              
      func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone: Bool = false) -> [EnqueueMessage] {
@@ -2546,10 +2705,10 @@ index f32b3c16..4404006b 100644
      }
      
 diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
-index e9c504df..0f48ba84 100644
+index 1ade8c01d..47bb16b46 100644
 --- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 +++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
-@@ -1356,6 +1356,34 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+@@ -1347,6 +1347,34 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
              }
          }
          
@@ -2585,13 +2744,13 @@ index e9c504df..0f48ba84 100644
          if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage) || diceEmoji != nil {
              if !isExpired {
 diff --git a/submodules/TelegramUI/Sources/SharedAccountContext.swift b/submodules/TelegramUI/Sources/SharedAccountContext.swift
-index be2822e7..14193009 100644
+index 478b8afa9..2b983ba30 100644
 --- a/submodules/TelegramUI/Sources/SharedAccountContext.swift
 +++ b/submodules/TelegramUI/Sources/SharedAccountContext.swift
-@@ -328,6 +328,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+@@ -315,6 +315,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
      private var webProxyCarrierHost: WebProxyCarrierWindowHost?
      
-     init(mainWindow: Window1?, sharedContainerPath: String, basePath: String, encryptionParameters: EngineValueBoxEncryptionParameters, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, notificationController: NotificationContainerController?, applicationBindings: TelegramApplicationBindings, initialPresentationDataAndSettings: InitialPresentationDataAndSettings, networkArguments: NetworkInitializationArguments, hasInAppPurchases: Bool, rootPath: String, legacyBasePath: String?, apsNotificationToken: Signal<Data?, NoError>, voipNotificationToken: Signal<Data?, NoError>, firebaseSecretStream: Signal<[String: String], NoError>, setNotificationCall: @escaping (PresentationCall?) -> Void, navigateToChat: @escaping (AccountRecordId, EnginePeer.Id, EngineMessage.Id?, Bool) -> Void, displayUpgradeProgress: @escaping (Float?) -> Void = { _ in }, appDelegate: AppDelegate?, testingEnvironment: Bool = false) {
+     init(mainWindow: Window1?, sharedContainerPath: String, basePath: String, encryptionParameters: ValueBoxEncryptionParameters, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, notificationController: NotificationContainerController?, applicationBindings: TelegramApplicationBindings, initialPresentationDataAndSettings: InitialPresentationDataAndSettings, networkArguments: NetworkInitializationArguments, hasInAppPurchases: Bool, rootPath: String, legacyBasePath: String?, apsNotificationToken: Signal<Data?, NoError>, voipNotificationToken: Signal<Data?, NoError>, firebaseSecretStream: Signal<[String: String], NoError>, setNotificationCall: @escaping (PresentationCall?) -> Void, navigateToChat: @escaping (AccountRecordId, PeerId, MessageId?, Bool) -> Void, displayUpgradeProgress: @escaping (Float?) -> Void = { _ in }, appDelegate: AppDelegate?, testingEnvironment: Bool = false) {
 +        AyoHooks.makeSettingsController = { context in
 +            return ayoSettingsController(context: context)
 +        }
@@ -2600,7 +2759,7 @@ index be2822e7..14193009 100644
  
          precondition(!testHasInstance)
 diff --git a/submodules/TelegramUI/Sources/SharedWakeupManager.swift b/submodules/TelegramUI/Sources/SharedWakeupManager.swift
-index b7c69492..448801ac 100644
+index b7c69492d..448801ac1 100644
 --- a/submodules/TelegramUI/Sources/SharedWakeupManager.swift
 +++ b/submodules/TelegramUI/Sources/SharedWakeupManager.swift
 @@ -535,6 +535,9 @@ public final class SharedWakeupManager {
@@ -2624,7 +2783,7 @@ index b7c69492..448801ac 100644
          self.backgroundStoryProcessingTaskProgressByKey = [:]
          self.backgroundStoryProcessingTaskLaunched = false
 diff --git a/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m b/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
-index 3191bf1b..f47aced3 100644
+index 3191bf1b3..f47aced35 100644
 --- a/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
 +++ b/submodules/UIKitRuntimeUtils/Source/UIKitRuntimeUtils/UIKitUtils.m
 @@ -296,7 +296,19 @@ NSObject * _Nullable makeColorMatrixFilter() {

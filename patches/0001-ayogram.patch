@@ -2946,6 +2946,145 @@ index 10b8e29b9..0ceb79569 100644
              let videoExport = MediaEditorVideoExport(postbox: postbox, subject: subject, configuration: configuration, outputPath: tempFile.path)
              
              let statusDisposable = videoExport.status.start(next: { status in
+diff --git a/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerComponent.swift b/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerComponent.swift
+index 7471319d1..793375acd 100644
+--- a/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerComponent.swift
++++ b/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerComponent.swift
+@@ -457,6 +457,7 @@ public final class StoryItemSetContainerComponent: Component {
+         let moreButton = ComponentView<Empty>()
+         var currentSoundButtonState: Bool?
+         let soundButton = ComponentView<Empty>()
++        let ayoStealthButton = ComponentView<Empty>()
+         var privacyIcon: ComponentView<Empty>?
+         var pictureInPictureIcon: ComponentView<Empty>?
+         
+@@ -4178,7 +4179,40 @@ public final class StoryItemSetContainerComponent: Component {
+                 }
+                 self.currentSoundButtonState = soundButtonState
+             }
+-            
++
++            // Ayo: stealth mode toggle button, placed to the left of the sound button. Red while
++            // stealth is active; a tap activates it directly (no premium gate, no confirmation sheet).
++            if !component.isEmbeddedInCamera && component.slice.effectivePeer.id != component.context.account.peerId {
++                let ayoStealthActive = component.stealthModeTimeout != nil
++                let ayoStealthButtonSize = self.ayoStealthButton.update(
++                    transition: transition,
++                    component: AnyComponent(PlainButtonComponent(
++                        content: AnyComponent(BundleIconComponent(
++                            name: "Chat/Context Menu/Eye",
++                            tintColor: ayoStealthActive ? UIColor(rgb: 0xff3b30) : .white
++                        )),
++                        effectAlignment: .center,
++                        minSize: CGSize(width: 33.0, height: 64.0),
++                        action: { [weak self] in
++                            guard let self else {
++                                return
++                            }
++                            self.sendMessageContext.ayoActivateStealthMode(view: self)
++                        }
++                    )),
++                    environment: {},
++                    containerSize: CGSize(width: 33.0, height: 64.0)
++                )
++                if let ayoStealthButtonView = self.ayoStealthButton.view {
++                    if ayoStealthButtonView.superview == nil {
++                        self.controlsClippingView.addSubview(ayoStealthButtonView)
++                    }
++                    transition.setFrame(view: ayoStealthButtonView, frame: CGRect(origin: CGPoint(x: headerRightOffset - ayoStealthButtonSize.width, y: 2.0), size: ayoStealthButtonSize))
++                    transition.setAlpha(view: ayoStealthButtonView, alpha: (component.hideUI || self.isEditingStory) ? 0.0 : 1.0)
++                    headerRightOffset -= ayoStealthButtonSize.width + 13.0
++                }
++            }
++
+             if isVideo && !isSilentVideo && component.isAudioMuted && (isFirstItem || itemChanged) {
+                 if isFirstItem {
+                     Queue.mainQueue().after(0.4) {
+diff --git a/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerViewSendMessage.swift b/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerViewSendMessage.swift
+index c4eabe9ee..f5db8a7da 100644
+--- a/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerViewSendMessage.swift
++++ b/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerViewSendMessage.swift
+@@ -3554,6 +3554,80 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
+         })
+     }
+ 
++    // Ayo: activate stealth mode directly from the dedicated viewer button, bypassing the premium
++    // gate and the confirmation sheet. Still respects the server state (shows the remaining time if
++    // already active). Hides the past 5 minutes of views and the next 25.
++    func ayoActivateStealthMode(view: StoryItemSetContainerComponent.View) {
++        guard let component = view.component else {
++            return
++        }
++
++        let _ = (component.context.engine.data.get(
++            TelegramEngine.EngineData.Item.Configuration.StoryConfigurationState(),
++            TelegramEngine.EngineData.Item.Configuration.App()
++        )
++        |> deliverOnMainQueue).start(next: { [weak self, weak view] config, appConfig in
++            guard let self, let view, let component = view.component, let controller = component.controller() else {
++                return
++            }
++
++            let timestamp = Int32(Date().timeIntervalSince1970)
++            if let activeUntilTimestamp = config.stealthModeState.actualizedNow().activeUntilTimestamp, activeUntilTimestamp > timestamp {
++                let remainingActiveSeconds = activeUntilTimestamp - timestamp
++                let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }.withUpdated(theme: defaultDarkPresentationTheme)
++                let text = component.strings.Story_ToastStealthModeActiveText(timeIntervalString(strings: presentationData.strings, value: remainingActiveSeconds)).string
++                let tooltipScreen = UndoOverlayController(
++                    presentationData: presentationData,
++                    content: .actionSucceeded(title: component.strings.Story_ToastStealthModeActiveTitle, text: text, cancel: "", destructive: false),
++                    elevatedLayout: false,
++                    animateInAsReplacement: false,
++                    action: { _ in
++                        return false
++                    }
++                )
++                self.tooltipScreen?.dismiss(animated: true)
++                self.tooltipScreen = tooltipScreen
++                controller.present(tooltipScreen, in: .current)
++                view.updateIsProgressPaused()
++                return
++            }
++
++            let pastPeriod: Int32
++            let futurePeriod: Int32
++            if let data = appConfig.data, let futurePeriodF = data["stories_stealth_future_period"] as? Double, let pastPeriodF = data["stories_stealth_past_period"] as? Double {
++                futurePeriod = Int32(futurePeriodF)
++                pastPeriod = Int32(pastPeriodF)
++            } else {
++                pastPeriod = 5 * 60
++                futurePeriod = 25 * 60
++            }
++
++            let _ = (component.context.engine.messages.enableStoryStealthMode()
++            |> deliverOnMainQueue).start(completed: { [weak self, weak view] in
++                guard let self, let view, let component = view.component, let controller = component.controller() else {
++                    return
++                }
++
++                let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }.withUpdated(theme: defaultDarkPresentationTheme)
++                let text = component.strings.Story_ToastStealthModeActivatedText(timeIntervalString(strings: presentationData.strings, value: pastPeriod), timeIntervalString(strings: presentationData.strings, value: futurePeriod)).string
++                let tooltipScreen = UndoOverlayController(
++                    presentationData: presentationData,
++                    content: .actionSucceeded(title: component.strings.Story_ToastStealthModeActivatedTitle, text: text, cancel: "", destructive: false),
++                    elevatedLayout: false,
++                    animateInAsReplacement: false,
++                    action: { _ in
++                        return false
++                    }
++                )
++                self.tooltipScreen?.dismiss(animated: true)
++                self.tooltipScreen = tooltipScreen
++                controller.present(tooltipScreen, in: .current)
++                view.updateIsProgressPaused()
++                HapticFeedback().success()
++            })
++        })
++    }
++
+     func presentStealthModeUpgrade(view: StoryItemSetContainerComponent.View, action: @escaping () -> Void) {
+         guard let component = view.component else {
+             return
 diff --git a/submodules/TelegramUI/Sources/AccountContext.swift b/submodules/TelegramUI/Sources/AccountContext.swift
 index c4accd876..f8b0bcbd4 100644
 --- a/submodules/TelegramUI/Sources/AccountContext.swift

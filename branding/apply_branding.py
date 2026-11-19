@@ -40,3 +40,16 @@ for old, new in replacements.items():
     j = j.replace(old, new)
 open(icon_json, 'w').write(j)
 print('icon updated')
+
+# Extra image assets (settings icons etc.) merged into TelegramUI's asset catalog
+assets_src = os.path.join(here, 'assets')
+assets_dst = os.path.join(root, 'submodules/TelegramUI/Images.xcassets')
+for dirpath, dirnames, filenames in os.walk(assets_src):
+    if dirpath.endswith('.imageset'):
+        rel = os.path.relpath(dirpath, assets_src)
+        dst = os.path.join(assets_dst, rel)
+        if os.path.exists(dst):
+            shutil.rmtree(dst)
+        shutil.copytree(dirpath, dst)
+        print('asset:', rel)
+        dirnames[:] = []

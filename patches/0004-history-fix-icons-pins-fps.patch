@@ -1,0 +1,251 @@
+diff --git a/submodules/AccountContext/Sources/AyoHooks.swift b/submodules/AccountContext/Sources/AyoHooks.swift
+new file mode 100644
+index 00000000..b63a7510
+--- /dev/null
++++ b/submodules/AccountContext/Sources/AyoHooks.swift
+@@ -0,0 +1,8 @@
++import Foundation
++import Display
++
++/// Ayo: lets low-level modules (e.g. ChatListUI) open screens that live in
++/// modules they cannot depend on directly. Filled in by TelegramUI at startup.
++public enum AyoHooks {
++    public static var makeSettingsController: ((AccountContext) -> ViewController)?
++}
+diff --git a/submodules/Camera/Sources/Camera.swift b/submodules/Camera/Sources/Camera.swift
+index b2fccc4b..b59579d4 100644
+--- a/submodules/Camera/Sources/Camera.swift
++++ b/submodules/Camera/Sources/Camera.swift
+@@ -98,6 +98,10 @@ final class CameraDeviceContext {
+     }
+     
+     private func preferredMaxFrameRate(useLower: Bool) -> Double {
++        // Ayo: 60 fps for the regular camera and round videos (dual camera stays at 30)
++        if AyuSettings.unlockFrameRate && !useLower && (self.exclusive || self.isRoundVideo) {
++            return 60.0
++        }
+         if !self.exclusive || self.isRoundVideo || useLower {
+             return 30.0
+         }
+diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
+index eafe9575..3ab91692 100644
+--- a/submodules/ChatListUI/Sources/ChatListController.swift
++++ b/submodules/ChatListUI/Sources/ChatListController.swift
+@@ -6783,6 +6783,19 @@ private final class ChatListLocationContext {
+     var proxyButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
+     var storyButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
+     
++    // Ayo: quick access to Ayo settings from the main chat list
++    private lazy var ayoSettingsButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment> = AnyComponentWithIdentity(id: "ayoSettings", component: AnyComponent(NavigationButtonComponent(
++        content: .icon(imageName: "Chat List/AyoSettingsIcon"),
++        pressed: { [weak self] _ in
++            guard let self, let parentController = self.parentController else {
++                return
++            }
++            if let controller = AyoHooks.makeSettingsController?(self.context) {
++                parentController.push(controller)
++            }
++        }
++    )))
++    
+     var rightButtons: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] {
+         var result: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] = []
+         if let rightButton = self.rightButton {
+@@ -6791,6 +6804,9 @@ private final class ChatListLocationContext {
+         if let storyButton = self.storyButton {
+             result.append(storyButton)
+         }
++        if let rightButton = self.rightButton, rightButton.id == AnyHashable("compose"), AyuSettings.showChatListSettingsButton {
++            result.append(self.ayoSettingsButton)
++        }
+         if let proxyButton = self.proxyButton {
+             result.append(proxyButton)
+         }
+diff --git a/submodules/SettingsUI/Sources/AyoSettingsController.swift b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+index 4362612c..3d9ab3aa 100644
+--- a/submodules/SettingsUI/Sources/AyoSettingsController.swift
++++ b/submodules/SettingsUI/Sources/AyoSettingsController.swift
+@@ -97,6 +97,12 @@ private func ayoSettingsEntries() -> [AyoSettingsEntry] {
+     entries.append(.toggle(id: 23, section: 2, key: "screenshotNotify", title: "Не уведомлять о скриншотах", value: AyuSettings.dontNotifyScreenshots))
+     entries.append(.footer(id: 24, section: 2, text: "Копирование, сохранение и скриншоты в защищённых чатах. Изменения применяются после повторного открытия чата."))
+ 
++    entries.append(.header(id: 30, section: 3, text: "ПРОЧЕЕ"))
++    entries.append(.toggle(id: 31, section: 3, key: "unlockFrameRate", title: "60 FPS в камере, кружках и видео", value: AyuSettings.unlockFrameRate))
++    entries.append(.toggle(id: 32, section: 3, key: "unlimitedPins", title: "Без лимита закреплённых чатов", value: AyuSettings.unlimitedPins))
++    entries.append(.toggle(id: 33, section: 3, key: "chatListButton", title: "Кнопка Ayo на главном экране", value: AyuSettings.showChatListSettingsButton))
++    entries.append(.footer(id: 34, section: 3, text: "Сверх лимита закрепы хранятся только на этом устройстве: сервер Telegram не принимает больше своего лимита."))
++
+     return entries
+ }
+ 
+@@ -116,6 +122,9 @@ public func ayoSettingsController(context: AccountContext) -> ViewController {
+         case "copy": AyuSettings.bypassCopyProtection = value
+         case "screenshots": AyuSettings.allowScreenshots = value
+         case "screenshotNotify": AyuSettings.dontNotifyScreenshots = value
++        case "unlockFrameRate": AyuSettings.unlockFrameRate = value
++        case "unlimitedPins": AyuSettings.unlimitedPins = value
++        case "chatListButton": AyuSettings.showChatListSettingsButton = value
+         default: break
+         }
+         counter += 1
+diff --git a/submodules/TelegramCore/Sources/Account/AccountManager.swift b/submodules/TelegramCore/Sources/Account/AccountManager.swift
+index 3f2b4794..82b32119 100644
+--- a/submodules/TelegramCore/Sources/Account/AccountManager.swift
++++ b/submodules/TelegramCore/Sources/Account/AccountManager.swift
+@@ -263,6 +263,12 @@ public func performAppGroupUpgrades(appGroupPath: String, rootPath: String) {
+     DispatchQueue.global(qos: .default).async {
+         let _ = try? FileManager.default.createDirectory(at: URL(fileURLWithPath: rootPath), withIntermediateDirectories: true, attributes: nil)
+ 
++        // Ayo: in sideloaded builds the "app group" is the app's own Library directory
++        // (see AppDelegate fallback); never wipe system folders and our own data there.
++        if URL(fileURLWithPath: appGroupPath).lastPathComponent == "Library" {
++            return
++        }
++
+         if let items = FileManager.default.enumerator(at: URL(fileURLWithPath: appGroupPath), includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants], errorHandler: nil) {
+             let allowedDirectories: [String] = [
+                 "telegram-data",
+diff --git a/submodules/TelegramCore/Sources/AyuMessageHistory.swift b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
+index 5c592c67..285839f9 100644
+--- a/submodules/TelegramCore/Sources/AyuMessageHistory.swift
++++ b/submodules/TelegramCore/Sources/AyuMessageHistory.swift
+@@ -26,8 +26,9 @@ public final class AyuMessageHistory {
+     private static let maxEditsPerMessage = 50
+ 
+     private init() {
+-        let baseUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+-        let directoryUrl = baseUrl.appendingPathComponent("ayo", isDirectory: true)
++        // Kept outside of Telegram's data and cache folders so cache cleanup never touches it.
++        let baseUrl = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
++        let directoryUrl = baseUrl.appendingPathComponent("AyoGram", isDirectory: true)
+         let _ = try? FileManager.default.createDirectory(at: directoryUrl, withIntermediateDirectories: true, attributes: nil)
+         self.path = directoryUrl.appendingPathComponent("message-history.json").path
+ 
+@@ -97,7 +98,7 @@ public final class AyuMessageHistory {
+         self.saveScheduled = true
+         self.lock.unlock()
+ 
+-        self.saveQueue.asyncAfter(deadline: .now() + 1.0, execute: { [weak self] in
++        self.saveQueue.asyncAfter(deadline: .now() + 0.3, execute: { [weak self] in
+             guard let self else {
+                 return
+             }
+diff --git a/submodules/TelegramCore/Sources/AyuSettings.swift b/submodules/TelegramCore/Sources/AyuSettings.swift
+index f4272631..eb8c185f 100644
+--- a/submodules/TelegramCore/Sources/AyuSettings.swift
++++ b/submodules/TelegramCore/Sources/AyuSettings.swift
+@@ -51,6 +51,20 @@ public enum AyuSettings {
+         set { writeFlag("ayo.keepEditHistory", newValue) }
+     }
+ 
++    // Misc
++    public static var unlockFrameRate: Bool {
++        get { return readFlag("ayo.unlockFrameRate", true) }
++        set { writeFlag("ayo.unlockFrameRate", newValue) }
++    }
++    public static var unlimitedPins: Bool {
++        get { return readFlag("ayo.unlimitedPins", true) }
++        set { writeFlag("ayo.unlimitedPins", newValue) }
++    }
++    public static var showChatListSettingsButton: Bool {
++        get { return readFlag("ayo.showChatListSettingsButton", true) }
++        set { writeFlag("ayo.showChatListSettingsButton", newValue) }
++    }
++
+     /// Master switch: turns all three on/off at once.
+     public static var ghostModeEnabled: Bool {
+         get { return dontReadMessages && dontSendTyping && dontSendOnline }
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
+index aa11e522..dd5bbb3a 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift
+@@ -57,7 +57,7 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
+             }
+             
+             let count = sameKind.count + additionalCount
+-            if count > limitCount, itemIds.firstIndex(of: itemId) == nil {
++            if count > limitCount, !AyuSettings.unlimitedPins, itemIds.firstIndex(of: itemId) == nil {
+                 return .limitExceeded(count: sameKind.count, limit: limitCount)
+             } else {
+                 if let index = itemIds.firstIndex(of: itemId) {
+diff --git a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
+index b3a77212..aa0754b9 100644
+--- a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
++++ b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
+@@ -129,6 +129,7 @@ public struct PresentationResourcesSettings {
+     public static let appearance = renderSettingsIcon(name: "Item List/Icons/Appearance", backgroundColors: [colorLightBlue])
+     public static let language = renderSettingsIcon(name: "Item List/Icons/Language", backgroundColors: [colorPurple])
+     public static let powerSaving = renderSettingsIcon(name: "Item List/Icons/PowerSaving", backgroundColors: [colorOrange])
++    public static let ayoSettings = renderSettingsIcon(name: "Item List/Icons/AyoGhost", backgroundColors: [UIColor(rgb: 0xA974FF), UIColor(rgb: 0x6A3BE0)])
+     public static let business = renderSettingsIcon(name: "Item List/Icons/Business", backgroundColors: [UIColor(rgb: 0xA95CE3), UIColor(rgb: 0xF16B80)])
+     public static let myProfile = renderSettingsIcon(name: "Item List/Icons/Profile", backgroundColors: [colorRed])
+     
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+index 9f2d7f8e..3bfbd890 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+@@ -244,7 +244,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+         interaction.openSettings(.powerSaving)
+     }))
+     
+-    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: "Ayo настройки", icon: PresentationResourcesSettings.powerSaving, action: {
++    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: "Ayo настройки", icon: PresentationResourcesSettings.ayoSettings, action: {
+         interaction.openSettings(.ayoSettings)
+     }))
+     
+diff --git a/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift b/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
+index 10b8e29b..0ceb7956 100644
+--- a/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
++++ b/submodules/TelegramUI/Components/Resources/FetchVideoMediaResource/Sources/FetchVideoMediaResource.swift
+@@ -10,6 +10,18 @@ import LocalMediaResources
+ import LegacyMediaPickerUI
+ import MediaEditor
+ import Photos
++import AVFoundation
++
++// Ayo: keep the source frame rate (up to 60) instead of always re-encoding at 30 fps
++private func ayoExportFrameRate(_ asset: AVAsset?) -> Float {
++    guard AyuSettings.unlockFrameRate, let asset, let track = asset.tracks(withMediaType: .video).first else {
++        return 30.0
++    }
++    if track.nominalFrameRate > 30.0 {
++        return min(track.nominalFrameRate, 60.0)
++    }
++    return 30.0
++}
+ 
+ private final class AVURLAssetCopyItem: MediaResourceDataFetchCopyLocalItem {
+     private let url: URL
+@@ -347,7 +359,7 @@ public func fetchVideoLibraryMediaResource(postbox: Postbox, resource: VideoLibr
+                     let updatedSize = Atomic<Int64>(value: 0)
+                     if let mediaEditorValues {
+                         let duration: Double = avAsset.duration.seconds
+-                        let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
++                        let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: ayoExportFrameRate(avAsset))
+                         let videoExport = MediaEditorVideoExport(postbox: postbox, subject: .video(asset: avAsset, isStory: isStory), configuration: configuration, outputPath: tempFile.path)
+                         
+                         let statusDisposable = videoExport.status.start(next: { status in
+@@ -551,7 +563,7 @@ public func fetchLocalFileVideoMediaResource(postbox: Postbox, resource: LocalFi
+                 return EmptyDisposable
+             }
+             
+-            let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: 30.0)
++            let configuration = recommendedVideoExportConfiguration(values: mediaEditorValues, duration: duration, frameRate: isImage ? 30.0 : ayoExportFrameRate(avAsset))
+             let videoExport = MediaEditorVideoExport(postbox: postbox, subject: subject, configuration: configuration, outputPath: tempFile.path)
+             
+             let statusDisposable = videoExport.status.start(next: { status in
+diff --git a/submodules/TelegramUI/Sources/SharedAccountContext.swift b/submodules/TelegramUI/Sources/SharedAccountContext.swift
+index 5637c9e3..e3d29249 100644
+--- a/submodules/TelegramUI/Sources/SharedAccountContext.swift
++++ b/submodules/TelegramUI/Sources/SharedAccountContext.swift
+@@ -300,6 +300,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
+     private let energyUsageAutomaticDisposable = MetaDisposable()
+     
+     init(mainWindow: Window1?, sharedContainerPath: String, basePath: String, encryptionParameters: ValueBoxEncryptionParameters, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, notificationController: NotificationContainerController?, applicationBindings: TelegramApplicationBindings, initialPresentationDataAndSettings: InitialPresentationDataAndSettings, networkArguments: NetworkInitializationArguments, hasInAppPurchases: Bool, rootPath: String, legacyBasePath: String?, apsNotificationToken: Signal<Data?, NoError>, voipNotificationToken: Signal<Data?, NoError>, firebaseSecretStream: Signal<[String: String], NoError>, setNotificationCall: @escaping (PresentationCall?) -> Void, navigateToChat: @escaping (AccountRecordId, PeerId, MessageId?, Bool) -> Void, displayUpgradeProgress: @escaping (Float?) -> Void = { _ in }, appDelegate: AppDelegate?, testingEnvironment: Bool = false) {
++        AyoHooks.makeSettingsController = { context in
++            return ayoSettingsController(context: context)
++        }
++        
+         assert(Queue.mainQueue().isCurrent())
+ 
+         precondition(!testHasInstance)
